@@ -1,0 +1,43 @@
+name: BigQuery Backup
+
+on:
+  schedule:
+    # Runs every day at 06:00 UTC — adjust to taste.
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run backup
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          BQ_DATASETS: ${{ vars.BQ_DATASETS }}
+          BQ_LOCATIONS: ${{ vars.BQ_LOCATIONS }}
+          GIT_PUSH_ENABLED: "true"
+          GIT_REMOTE_URL: https://github.com/${{ github.repository }}.git
+          GIT_BRANCH: ${{ github.ref_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GIT_USER_NAME: github-actions[bot]
+          GIT_USER_EMAIL: github-actions[bot]@users.noreply.github.com
+        run: python main.py
