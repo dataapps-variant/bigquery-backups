@@ -1,7 +1,8 @@
 """Wraps the BigQuery, BigQuery Data Transfer, and Dataform APIs to fetch
 the objects this project backs up: views, routines (procedures/functions),
-scheduled queries, and BigQuery Studio saved queries. Every call here is
-read-only — nothing in BigQuery is ever created, modified, or deleted.
+scheduled queries, BigQuery Studio saved queries, and recent query history.
+Every call here is read-only — nothing in BigQuery is ever created,
+modified, or deleted.
 
 Saved queries aren't exposed by the BigQuery API itself — BigQuery Studio
 stores each one as its own single-file Dataform "repository" behind the
@@ -30,6 +31,14 @@ def safe_filename(name: str) -> str:
     """Sanitize a BigQuery identifier / display name for use as a filename."""
     cleaned = _SAFE_NAME_RE.sub("_", name).strip("._") or "unnamed"
     return cleaned
+
+
+def name_to_path_segments(display_name: str) -> list[str]:
+    """Split a dotted saved-query name (e.g. 'Sticky_Data.LMC_New_Users') into
+    real folder segments, mirroring the dataset.query naming convention used
+    in the BigQuery Studio Queries panel."""
+    parts = [safe_filename(p) for p in display_name.split(".") if p.strip()]
+    return parts or ["unnamed"]
 
 
 @dataclass
@@ -163,7 +172,7 @@ class BigQueryBackupClient:
                     continue
 
                 file_paths = [entry.file for entry in entries if entry.file]
-                safe_name = safe_filename(repo.display_name)
+                path_segments = name_to_path_segments(repo.display_name)
 
                 for file_path in file_paths:
                     try:
@@ -179,14 +188,63 @@ class BigQueryBackupClient:
                         continue
 
                     suffix = "" if len(file_paths) == 1 else f"__{safe_filename(file_path)}"
-                    filename = f"{safe_name}{suffix}.sql"
+                    folder = "/".join(path_segments[:-1])
+                    filename = f"{path_segments[-1]}{suffix}.sql"
+                    relative = f"saved_queries/{location}/{filename}"
+                    if folder:
+                        relative = f"saved_queries/{location}/{folder}/{filename}"
                     content = file_resp.contents.decode("utf-8", errors="replace")
                     objects.append(
-                        BackupObject(
-                            relative_path=f"saved_queries/{location}/{filename}",
-                            content=content.rstrip() + "\n",
-                        )
+                        BackupObject(relative_path=relative, content=content.rstrip() + "\n")
                     )
+        return objects
+
+    def fetch_query_history(self) -> list[BackupObject]:
+        """Every query actually run in the project within the configured
+        lookback window (INFORMATION_SCHEMA.JOBS_BY_PROJECT is region-scoped
+        and self-expires per BigQuery's retention, so old entries roll off
+        both BigQuery and this backup automatically)."""
+        objects: list[BackupObject] = []
+        for location in self.config.bq_locations:
+            region = f"region-{location.lower()}"
+            query = f"""
+                SELECT job_id, user_email, creation_time, start_time, end_time,
+                       statement_type, state, query
+                FROM `{region}`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+                WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {self.config.query_history_days} DAY)
+                  AND job_type = 'QUERY'
+                  AND state = 'DONE'
+                  AND query IS NOT NULL
+                ORDER BY creation_time DESC
+            """
+            try:
+                rows = self.bq.query(query).result()
+            except Exception:
+                logger.exception(
+                    "Failed to list query history in location %s", location
+                )
+                continue
+
+            for row in rows:
+                if not row.query:
+                    continue
+                date_str = row.creation_time.strftime("%Y-%m-%d")
+                statement = (row.statement_type or "QUERY").replace(" ", "_")
+                filename = f"{statement}__{safe_filename(row.job_id)}.sql"
+                header = (
+                    f"-- job_id: {row.job_id}\n"
+                    f"-- user: {row.user_email}\n"
+                    f"-- statement_type: {row.statement_type}\n"
+                    f"-- created: {row.creation_time.isoformat()}\n"
+                    f"-- started: {row.start_time.isoformat() if row.start_time else ''}\n"
+                    f"-- ended: {row.end_time.isoformat() if row.end_time else ''}\n\n"
+                )
+                objects.append(
+                    BackupObject(
+                        relative_path=f"query_history/{location}/{date_str}/{filename}",
+                        content=header + row.query.rstrip() + "\n",
+                    )
+                )
         return objects
 
 

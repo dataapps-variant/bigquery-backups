@@ -36,4 +36,13 @@ def collect_all_objects(client: BigQueryBackupClient, config: Config) -> list[Ba
         logger.info("Found %d saved quer(y/ies)", len(saved_queries))
         objects.extend(saved_queries)
 
+    if config.query_history_enabled:
+        query_history = client.fetch_query_history()
+        logger.info(
+            "Found %d executed quer(y/ies) in the last %d day(s)",
+            len(query_history),
+            config.query_history_days,
+        )
+        objects.extend(query_history)
+
     return objects
