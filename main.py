@@ -67,15 +67,16 @@ def main() -> int:
         ensure_repo(PROJECT_ROOT, config)
         stage_all(PROJECT_ROOT)
 
-        if not has_staged_changes(PROJECT_ROOT):
-            logger.info("No changes since last backup — nothing to commit")
-            return 0
+        if has_staged_changes(PROJECT_ROOT):
+            timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+            message = f"{config.commit_message_prefix} ({timestamp})"
+            commit(PROJECT_ROOT, message)
+            logger.info("Committed: %s", message)
+        else:
+            logger.info("No changes since last backup — nothing new to commit")
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        message = f"{config.commit_message_prefix} ({timestamp})"
-        commit(PROJECT_ROOT, message)
-        logger.info("Committed: %s", message)
-
+        # Always attempt a push: an earlier run may have committed locally
+        # but failed to push (e.g. an auth error), leaving commits stranded.
         push(PROJECT_ROOT, config)
         logger.info("Pushed to remote branch %s", config.git_branch)
     except GitError as exc:
