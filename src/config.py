@@ -33,6 +33,9 @@ class Config:
     datasets_filter: list[str]
     bq_locations: list[str]
 
+    saved_queries_enabled: bool
+    saved_queries_locations: list[str]
+
     backup_root_dir: Path
 
     git_push_enabled: bool
@@ -67,6 +70,8 @@ class Config:
             google_application_credentials=creds,
             datasets_filter=_list_env("BQ_DATASETS"),
             bq_locations=_list_env("BQ_LOCATIONS") or ["US"],
+            saved_queries_enabled=_bool_env("SAVED_QUERIES_ENABLED", True),
+            saved_queries_locations=_list_env("SAVED_QUERIES_LOCATIONS") or ["us-central1"],
             backup_root_dir=Path(os.environ.get("BACKUP_ROOT_DIR", "backups")),
             git_push_enabled=git_push_enabled,
             git_remote_url=git_remote_url,

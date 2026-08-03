@@ -1,7 +1,13 @@
-"""Wraps the BigQuery and BigQuery Data Transfer APIs to fetch the objects
-this project backs up: views, routines (procedures/functions), and
-scheduled queries. Every call here is read-only — nothing in BigQuery is
-ever created, modified, or deleted."""
+"""Wraps the BigQuery, BigQuery Data Transfer, and Dataform APIs to fetch
+the objects this project backs up: views, routines (procedures/functions),
+scheduled queries, and BigQuery Studio saved queries. Every call here is
+read-only — nothing in BigQuery is ever created, modified, or deleted.
+
+Saved queries aren't exposed by the BigQuery API itself — BigQuery Studio
+stores each one as its own single-file Dataform "repository" behind the
+scenes (marked with a `single-file-asset-type: sql` label), which is why
+this needs the Dataform client rather than the BigQuery one.
+"""
 from __future__ import annotations
 
 import logging
@@ -10,6 +16,7 @@ from dataclasses import dataclass
 
 from google.cloud import bigquery
 from google.cloud import bigquery_datatransfer_v1
+from google.cloud import dataform_v1
 from google.protobuf.json_format import MessageToDict
 
 from .config import Config
@@ -38,6 +45,7 @@ class BigQueryBackupClient:
         self.config = config
         self.bq = bigquery.Client(project=config.gcp_project_id)
         self.dts = bigquery_datatransfer_v1.DataTransferServiceClient()
+        self.dataform = dataform_v1.DataformClient()
 
     def list_datasets(self) -> list[str]:
         if self.config.datasets_filter:
@@ -124,6 +132,61 @@ class BigQueryBackupClient:
                         content=_to_pretty_json(as_dict),
                     )
                 )
+        return objects
+
+    def fetch_saved_queries(self) -> list[BackupObject]:
+        objects: list[BackupObject] = []
+        for location in self.config.saved_queries_locations:
+            parent = f"projects/{self.config.gcp_project_id}/locations/{location}"
+            try:
+                repos = list(self.dataform.list_repositories(parent=parent))
+            except Exception:
+                logger.exception(
+                    "Failed to list saved queries in location %s", location
+                )
+                continue
+
+            for repo in repos:
+                if repo.labels.get("single-file-asset-type") != "sql":
+                    continue  # a real Dataform repo, not a BigQuery Studio saved query
+
+                try:
+                    entries = list(
+                        self.dataform.query_repository_directory_contents(
+                            request={"name": repo.name}
+                        )
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to list files for saved query %s", repo.display_name
+                    )
+                    continue
+
+                file_paths = [entry.file for entry in entries if entry.file]
+                safe_name = safe_filename(repo.display_name)
+
+                for file_path in file_paths:
+                    try:
+                        file_resp = self.dataform.read_repository_file(
+                            request={"name": repo.name, "path": file_path}
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to read saved query %s (%s)",
+                            repo.display_name,
+                            file_path,
+                        )
+                        continue
+
+                    suffix = "" if len(file_paths) == 1 else f"__{safe_filename(file_path)}"
+                    filename = f"{safe_name}{suffix}.sql"
+                    content = file_resp.contents.decode("utf-8", errors="replace")
+                    objects.append(
+                        BackupObject(
+                            relative_path=f"saved_queries/{location}/{filename}",
+                            content=content.rstrip() + "\n",
+                        )
+                    )
         return objects
 
 

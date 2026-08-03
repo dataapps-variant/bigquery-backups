@@ -34,6 +34,7 @@ jobs:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
           BQ_DATASETS: ${{ vars.BQ_DATASETS }}
           BQ_LOCATIONS: ${{ vars.BQ_LOCATIONS }}
+          SAVED_QUERIES_LOCATIONS: ${{ vars.SAVED_QUERIES_LOCATIONS }}
           GIT_PUSH_ENABLED: "true"
           GIT_REMOTE_URL: https://github.com/${{ github.repository }}.git
           GIT_BRANCH: ${{ github.ref_name }}

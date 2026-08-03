@@ -31,4 +31,9 @@ def collect_all_objects(client: BigQueryBackupClient, config: Config) -> list[Ba
     logger.info("Found %d scheduled quer(y/ies)", len(scheduled_queries))
     objects.extend(scheduled_queries)
 
+    if config.saved_queries_enabled:
+        saved_queries = client.fetch_saved_queries()
+        logger.info("Found %d saved quer(y/ies)", len(saved_queries))
+        objects.extend(saved_queries)
+
     return objects
