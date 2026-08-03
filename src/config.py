@@ -22,11 +22,6 @@ def _list_env(name: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
-def _int_env(name: str, default: int) -> int:
-    value = os.environ.get(name, "").strip()
-    return int(value) if value else default
-
-
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
 
@@ -37,9 +32,6 @@ class Config:
     google_application_credentials: str | None
     datasets_filter: list[str]
     bq_locations: list[str]
-
-    query_history_enabled: bool
-    query_history_days: int
 
     backup_root_dir: Path
 
@@ -75,8 +67,6 @@ class Config:
             google_application_credentials=creds,
             datasets_filter=_list_env("BQ_DATASETS"),
             bq_locations=_list_env("BQ_LOCATIONS") or ["US"],
-            query_history_enabled=_bool_env("QUERY_HISTORY_ENABLED", True),
-            query_history_days=_int_env("QUERY_HISTORY_DAYS", 7),
             backup_root_dir=Path(os.environ.get("BACKUP_ROOT_DIR", "backups")),
             git_push_enabled=git_push_enabled,
             git_remote_url=git_remote_url,

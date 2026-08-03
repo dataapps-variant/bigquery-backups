@@ -24,13 +24,4 @@ def collect_all_objects(client: BigQueryBackupClient, config: Config) -> list[Ba
     logger.info("Found %d scheduled quer(y/ies)", len(scheduled_queries))
     objects.extend(scheduled_queries)
 
-    if config.query_history_enabled:
-        query_history = client.fetch_query_history()
-        logger.info(
-            "Found %d executed quer(y/ies) in the last %d day(s)",
-            len(query_history),
-            config.query_history_days,
-        )
-        objects.extend(query_history)
-
     return objects
