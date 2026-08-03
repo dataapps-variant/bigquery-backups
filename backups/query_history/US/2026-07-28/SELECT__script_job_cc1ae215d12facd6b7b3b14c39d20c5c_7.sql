@@ -1,0 +1,8 @@
+-- job_id: script_job_cc1ae215d12facd6b7b3b14c39d20c5c_7
+-- user: dataapps@variant.net
+-- statement_type: SELECT
+-- created: 2026-07-28T14:40:12.538000+00:00
+-- started: 2026-07-28T14:40:12.623000+00:00
+-- ended: 2026-07-28T14:40:12.813000+00:00
+
+SELECT STRUCT<FLOAT64>((SELECT COALESCE(sum(Amount), 0) FROM `variant-finance-data-project.vatiant_finance_Google_Query_Test.Google_spend_snapshot_history` WHERE snapshot_id = v_snapshot_id)).*;

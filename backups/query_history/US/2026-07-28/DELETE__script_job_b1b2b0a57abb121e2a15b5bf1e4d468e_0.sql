@@ -1,0 +1,12 @@
+-- job_id: script_job_b1b2b0a57abb121e2a15b5bf1e4d468e_0
+-- user: dataapps@variant.net
+-- statement_type: DELETE
+-- created: 2026-07-28T09:45:01.707000+00:00
+-- started: 2026-07-28T09:45:02.053000+00:00
+-- ended: 2026-07-28T09:45:03.577000+00:00
+
+DELETE FROM `variant-finance-data-project.VPU_Merged.15K_Crystal_Ball_30`
+WHERE Report_date >= DATE_SUB(
+  (SELECT MAX(Report_date) FROM `variant-finance-data-project.VPU_Merged.15K_Crystal_Ball_30`),  -- ▼ (2 of 4) ▼
+  INTERVAL lookback_days DAY
+)

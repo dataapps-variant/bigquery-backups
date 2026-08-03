@@ -1,0 +1,8 @@
+-- job_id: script_job_17a1f9b326238775f65341b5d21c4a33_0
+-- user: dataapps@variant.net
+-- statement_type: SELECT
+-- created: 2026-07-28T12:33:26.517000+00:00
+-- started: 2026-07-28T12:33:26.528000+00:00
+-- ended: 2026-07-28T12:33:26.688000+00:00
+
+SELECT STRUCT<ARRAY<DATE>>(GENERATE_DATE_ARRAY(month_start, DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL 1 MONTH)).*;

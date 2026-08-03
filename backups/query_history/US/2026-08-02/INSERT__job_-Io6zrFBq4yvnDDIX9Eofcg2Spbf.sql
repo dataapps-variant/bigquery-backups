@@ -1,0 +1,8 @@
+-- job_id: job_-Io6zrFBq4yvnDDIX9Eofcg2Spbf
+-- user: msads-917@variant-finance-data-project.iam.gserviceaccount.com
+-- statement_type: INSERT
+-- created: 2026-08-02T05:46:20.854000+00:00
+-- started: 2026-08-02T05:46:21.027000+00:00
+-- ended: 2026-08-02T05:46:21.857000+00:00
+
+INSERT INTO `MS_Ads_JF_AdPerformanceDailyReport` (`Date`, `AccountId`, `AccountName`, `AccountNumber`, `CampaignId`, `CampaignName`, `CampaignType`, `BaseCampaignId`, `AdGroupId`, `AdId`, `AdType`, `CustomerId`, `CurrencyCode`, `DestinationUrl`, `DisplayUrl`, `FinalAppUrl`, `FinalMobileUrl`, `FinalUrl`, `FinalUrlSuffix`, `AllConversionRate`, `AllConversions`, `AllConversionsQualified`, `AllCostPerConversion`, `Clicks`, `Conversions`, `CostPerConversion`, `Impressions`, `Spend`) (SELECT main_table_alias.`Date`,main_table_alias.`AccountId`,main_table_alias.`AccountName`,main_table_alias.`AccountNumber`,main_table_alias.`CampaignId`,main_table_alias.`CampaignName`,main_table_alias.`CampaignType`,main_table_alias.`BaseCampaignId`,main_table_alias.`AdGroupId`,main_table_alias.`AdId`,main_table_alias.`AdType`,main_table_alias.`CustomerId`,main_table_alias.`CurrencyCode`,main_table_alias.`DestinationUrl`,main_table_alias.`DisplayUrl`,main_table_alias.`FinalAppUrl`,main_table_alias.`FinalMobileUrl`,main_table_alias.`FinalUrl`,main_table_alias.`FinalUrlSuffix`,main_table_alias.`AllConversionRate`,main_table_alias.`AllConversions`,main_table_alias.`AllConversionsQualified`,main_table_alias.`AllCostPerConversion`,main_table_alias.`Clicks`,main_table_alias.`Conversions`,main_table_alias.`CostPerConversion`,main_table_alias.`Impressions`,main_table_alias.`Spend`  FROM `MS_Ads_JF_AdPerformanceDailyReport_77254858_7e3e_4702_b941_47ae7e0d87d8` AS main_table_alias)

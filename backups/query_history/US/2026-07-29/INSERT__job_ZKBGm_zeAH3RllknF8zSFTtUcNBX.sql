@@ -1,0 +1,8 @@
+-- job_id: job_ZKBGm_zeAH3RllknF8zSFTtUcNBX
+-- user: msads-917@variant-finance-data-project.iam.gserviceaccount.com
+-- statement_type: INSERT
+-- created: 2026-07-29T05:46:06.505000+00:00
+-- started: 2026-07-29T05:46:06.669000+00:00
+-- ended: 2026-07-29T05:46:07.592000+00:00
+
+INSERT INTO `TikTok_CT_Campaigns` (`Id`, `Name`, `Type`, `AdAccountId`, `CreatedDate`, `UpdatedDate`, `_skyvia_sync`) (SELECT main_table_alias.`Id`,main_table_alias.`Name`,main_table_alias.`Type`,main_table_alias.`AdAccountId`,main_table_alias.`CreatedDate`,main_table_alias.`UpdatedDate`,main_table_alias.`_skyvia_sync`  FROM `TikTok_CT_Campaigns_e9f29be3_a063_4b20_bdf7_45204a9ba7ec` AS main_table_alias LEFT JOIN `TikTok_CT_Campaigns` ON main_table_alias.`Id` = `TikTok_CT_Campaigns`.`Id` WHERE `TikTok_CT_Campaigns`.`Id` IS NULL)
