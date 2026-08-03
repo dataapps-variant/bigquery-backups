@@ -1,6 +1,7 @@
 """Wraps the BigQuery and BigQuery Data Transfer APIs to fetch the objects
-this project backs up: views, routines (procedures/functions), and
-scheduled queries."""
+this project backs up: routines (procedures/functions), scheduled queries,
+and recent query history. Every call here is read-only — nothing in
+BigQuery is ever created, modified, or deleted."""
 from __future__ import annotations
 
 import logging
@@ -42,37 +43,6 @@ class BigQueryBackupClient:
         if self.config.datasets_filter:
             return list(self.config.datasets_filter)
         return [ds.dataset_id for ds in self.bq.list_datasets(self.config.gcp_project_id)]
-
-    def fetch_views(self, dataset_id: str) -> list[BackupObject]:
-        table_types = ["'VIEW'"]
-        if self.config.include_materialized_views:
-            table_types.append("'MATERIALIZED_VIEW'")
-
-        query = f"""
-            SELECT table_name, table_type, ddl
-            FROM `{self.config.gcp_project_id}.{dataset_id}`.INFORMATION_SCHEMA.TABLES
-            WHERE table_type IN ({', '.join(table_types)})
-            ORDER BY table_name
-        """
-        objects: list[BackupObject] = []
-        try:
-            rows = self.bq.query(query).result()
-        except Exception:
-            logger.exception("Failed to list views for dataset %s", dataset_id)
-            return objects
-
-        for row in rows:
-            if not row.ddl:
-                continue
-            subfolder = "materialized_views" if row.table_type == "MATERIALIZED_VIEW" else "views"
-            filename = f"{safe_filename(row.table_name)}.sql"
-            objects.append(
-                BackupObject(
-                    relative_path=f"{dataset_id}/{subfolder}/{filename}",
-                    content=row.ddl.rstrip() + "\n",
-                )
-            )
-        return objects
 
     def fetch_routines(self, dataset_id: str) -> list[BackupObject]:
         query = f"""
@@ -125,6 +95,53 @@ class BigQueryBackupClient:
                     BackupObject(
                         relative_path=f"scheduled_queries/{location}/{filename}",
                         content=_to_pretty_json(as_dict),
+                    )
+                )
+        return objects
+
+    def fetch_query_history(self) -> list[BackupObject]:
+        """Every query actually run in the project within the configured
+        lookback window (INFORMATION_SCHEMA.JOBS_BY_PROJECT is region-scoped
+        and self-expires per BigQuery's retention, so old entries roll off
+        both BigQuery and this backup automatically)."""
+        objects: list[BackupObject] = []
+        for location in self.config.bq_locations:
+            region = f"region-{location.lower()}"
+            query = f"""
+                SELECT job_id, user_email, creation_time, start_time, end_time,
+                       statement_type, state, query
+                FROM `{region}`.INFORMATION_SCHEMA.JOBS_BY_PROJECT
+                WHERE creation_time >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL {self.config.query_history_days} DAY)
+                  AND job_type = 'QUERY'
+                  AND state = 'DONE'
+                  AND query IS NOT NULL
+                ORDER BY creation_time DESC
+            """
+            try:
+                rows = self.bq.query(query).result()
+            except Exception:
+                logger.exception(
+                    "Failed to list query history in location %s", location
+                )
+                continue
+
+            for row in rows:
+                if not row.query:
+                    continue
+                date_str = row.creation_time.strftime("%Y-%m-%d")
+                filename = f"{safe_filename(row.job_id)}.sql"
+                header = (
+                    f"-- job_id: {row.job_id}\n"
+                    f"-- user: {row.user_email}\n"
+                    f"-- statement_type: {row.statement_type}\n"
+                    f"-- created: {row.creation_time.isoformat()}\n"
+                    f"-- started: {row.start_time.isoformat() if row.start_time else ''}\n"
+                    f"-- ended: {row.end_time.isoformat() if row.end_time else ''}\n\n"
+                )
+                objects.append(
+                    BackupObject(
+                        relative_path=f"query_history/{location}/{date_str}/{filename}",
+                        content=header + row.query.rstrip() + "\n",
                     )
                 )
         return objects
