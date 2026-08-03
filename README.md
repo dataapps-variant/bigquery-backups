@@ -1,9 +1,10 @@
 # BigQuery Backup Automation
 
-Backs up a BigQuery project's **routines** (stored procedures & functions)
-and **scheduled queries** to version-controlled SQL/JSON files, deletes
-local backup files for objects that no longer exist in BigQuery, and
-commits + pushes the result to GitHub.
+Backs up a BigQuery project's **views**, **materialized views**, **routines**
+(stored procedures & functions), and **scheduled queries** to
+version-controlled SQL/JSON files, deletes local backup files for objects
+that no longer exist in BigQuery, and commits + pushes the result to
+GitHub.
 
 Everything this tool does against BigQuery is **read-only** — it never
 creates, edits, or deletes anything in your BigQuery project. It only reads
@@ -12,13 +13,15 @@ data and writes local backup files / GitHub commits.
 ## How it works
 
 1. **Discover** — lists every dataset in the project (or a filtered subset),
-   and queries `INFORMATION_SCHEMA.ROUTINES` for the exact
-   `CREATE OR REPLACE ...` DDL of each routine. Scheduled queries are read
-   via the BigQuery Data Transfer API.
+   and queries `INFORMATION_SCHEMA.TABLES` / `INFORMATION_SCHEMA.ROUTINES`
+   for the exact `CREATE OR REPLACE ...` DDL of each view and routine.
+   Scheduled queries are read via the BigQuery Data Transfer API.
 2. **Write** — each object becomes one file under `backups/`:
    ```
    backups/
      <dataset>/
+       views/<view_name>.sql
+       materialized_views/<view_name>.sql
        routines/
          procedures/<name>.sql
          functions/<name>.sql
@@ -26,18 +29,17 @@ data and writes local backup files / GitHub commits.
        <location>/<display_name>__<config_id>.json
    ```
 3. **Sync deletions** — any file under `backups/` that no longer corresponds
-   to a live BigQuery object (deleted routine or removed scheduled query)
-   is deleted, and now-empty folders are pruned.
+   to a live BigQuery object (dropped view, deleted routine, or removed
+   scheduled query) is deleted, and now-empty folders are pruned.
 4. **Commit & push** — stages all changes, commits with a timestamped
    message, and pushes to the configured GitHub remote/branch. If nothing
    new was created, it still pushes any earlier commit that hadn't made it
    to GitHub yet (e.g. after a temporary auth failure).
 
-> **Not covered**: BigQuery views, and manually-saved queries from the
-> BigQuery Studio "Saved queries" panel. Views were intentionally excluded
-> from this project's scope. Saved queries go through a newer, sparsely
-> documented Google API (Dataform) that wasn't reliable enough to build on
-> yet — for now, export those manually from the BigQuery UI if needed.
+> **Not covered**: manually-saved queries from the BigQuery Studio "Saved
+> queries" panel. These go through a newer, sparsely documented Google API
+> (Dataform) that wasn't reliable enough to build on yet — for now, export
+> those manually from the BigQuery UI if needed.
 
 ## Setup
 

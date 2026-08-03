@@ -1,7 +1,7 @@
 """Wraps the BigQuery and BigQuery Data Transfer APIs to fetch the objects
-this project backs up: routines (procedures/functions) and scheduled
-queries. Every call here is read-only — nothing in BigQuery is ever
-created, modified, or deleted."""
+this project backs up: views, routines (procedures/functions), and
+scheduled queries. Every call here is read-only — nothing in BigQuery is
+ever created, modified, or deleted."""
 from __future__ import annotations
 
 import logging
@@ -43,6 +43,33 @@ class BigQueryBackupClient:
         if self.config.datasets_filter:
             return list(self.config.datasets_filter)
         return [ds.dataset_id for ds in self.bq.list_datasets(self.config.gcp_project_id)]
+
+    def fetch_views(self, dataset_id: str) -> list[BackupObject]:
+        query = f"""
+            SELECT table_name, table_type, ddl
+            FROM `{self.config.gcp_project_id}.{dataset_id}`.INFORMATION_SCHEMA.TABLES
+            WHERE table_type IN ('VIEW', 'MATERIALIZED_VIEW')
+            ORDER BY table_name
+        """
+        objects: list[BackupObject] = []
+        try:
+            rows = self.bq.query(query).result()
+        except Exception:
+            logger.exception("Failed to list views for dataset %s", dataset_id)
+            return objects
+
+        for row in rows:
+            if not row.ddl:
+                continue
+            subfolder = "materialized_views" if row.table_type == "MATERIALIZED_VIEW" else "views"
+            filename = f"{safe_filename(row.table_name)}.sql"
+            objects.append(
+                BackupObject(
+                    relative_path=f"{dataset_id}/{subfolder}/{filename}",
+                    content=row.ddl.rstrip() + "\n",
+                )
+            )
+        return objects
 
     def fetch_routines(self, dataset_id: str) -> list[BackupObject]:
         query = f"""
