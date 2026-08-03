@@ -35,11 +35,18 @@ def sync_backup_dir(root: Path, objects: list[BackupObject]) -> SyncResult:
         target = root / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
 
-        if target.exists() and target.read_text(encoding="utf-8") == obj.content:
+        # Normalize any CRLF/CR that BigQuery/Dataform returned as part of
+        # the content itself, on top of pinning the on-disk line ending to
+        # LF via newline="\n" (without it, Path.write_text() on Windows
+        # silently rewrites every "\n" to "\r\n"). Either source shows up as
+        # stray ^M characters in editors and diffs that expect LF-only text.
+        content = obj.content.replace("\r\n", "\n").replace("\r", "\n")
+
+        if target.exists() and _read_lf(target) == content:
             result.unchanged += 1
             continue
 
-        target.write_text(obj.content, encoding="utf-8")
+        target.write_text(content, encoding="utf-8", newline="\n")
         result.written += 1
 
     existing_files = [p for p in root.rglob("*") if p.is_file()]
@@ -52,6 +59,13 @@ def sync_backup_dir(root: Path, objects: list[BackupObject]) -> SyncResult:
 
     _prune_empty_dirs(root)
     return result
+
+
+def _read_lf(path: Path) -> str:
+    # Path.read_text() only gained a `newline` parameter in Python 3.13;
+    # open() has always supported it, so use that for LF-only reading.
+    with open(path, "r", encoding="utf-8", newline="\n") as f:
+        return f.read()
 
 
 def _prune_empty_dirs(root: Path) -> None:

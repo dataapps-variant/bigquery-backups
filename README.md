@@ -89,10 +89,13 @@ The service account (or user) needs, at minimum:
 ### About `SAVED_QUERIES_LOCATIONS`
 
 Saved queries live in a Dataform-backed region that's independent of where
-your BigQuery datasets are. `us-central1` is the default and covers most
-projects, but if saved queries aren't showing up, check the region shown in
-your BigQuery Studio browser URL and set `SAVED_QUERIES_LOCATIONS`
-accordingly (comma-separated if you need more than one).
+your BigQuery datasets are — and different saved queries in the same
+project can live in *different* regions. If the count in your backup is
+lower than what you see in BigQuery, add a "Location" column to the
+BigQuery Studio "Queries" panel (via the column picker icon above the
+results table) to see exactly which regions are actually in use, then list
+all of them in `SAVED_QUERIES_LOCATIONS`, comma-separated (e.g.
+`us-central1,asia-south1`).
 
 ### Run it
 
