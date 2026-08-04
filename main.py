@@ -15,7 +15,7 @@ from src.backup import collect_all_objects
 from src.bq_client import BigQueryBackupClient
 from src.config import Config, ConfigError
 from src.git_utils import GitError, commit, ensure_repo, has_staged_changes, push, stage_all
-from src.inventory import build_rows, write_excel
+from src.inventory import build_rows, write_csv, write_excel
 from src.sync import sync_backup_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -60,10 +60,22 @@ def main() -> int:
     for deleted_path in result.deleted:
         logger.info("  deleted: %s", deleted_path)
 
+    # Local convenience exports, not part of the backup itself — each is
+    # independent so one being open in Excel elsewhere never blocks the
+    # other, and neither may ever block committing/pushing the real
+    # backup data.
     inventory_rows = build_rows(objects)
-    inventory_path = PROJECT_ROOT / "inventory.xlsx"
-    write_excel(inventory_rows, inventory_path)
-    logger.info("Wrote inventory (%d rows) to %s", len(inventory_rows), inventory_path.name)
+    for label, writer, filename in (
+        ("xlsx", write_excel, "inventory.xlsx"),
+        ("csv", write_csv, "inventory.csv"),
+    ):
+        try:
+            writer(inventory_rows, PROJECT_ROOT / filename)
+            logger.info("Wrote inventory (%d rows) to %s", len(inventory_rows), filename)
+        except OSError:
+            logger.warning(
+                "Could not write %s (likely open elsewhere) — skipping it this run", filename
+            )
 
     if not config.git_push_enabled:
         logger.info("GIT_PUSH_ENABLED is false — skipping git commit/push")

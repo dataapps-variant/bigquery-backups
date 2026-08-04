@@ -28,5 +28,8 @@ Thumbs.db
 
 # Inventory spreadsheets are local-only — never pushed to GitHub.
 bigquery_inventory.xlsx
+bigquery_inventory.csv
 bigquery_inventory_from_github.xlsx
+bigquery_inventory_from_github.csv
 inventory.xlsx
+inventory.csv

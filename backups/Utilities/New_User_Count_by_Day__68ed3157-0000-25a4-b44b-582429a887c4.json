@@ -5,7 +5,7 @@
   "display_name": "Utilities.New_User_Count_by_Day",
   "email_preferences": {},
   "name": "projects/1041741270489/locations/us/transferConfigs/68ed3157-0000-25a4-b44b-582429a887c4",
-  "next_run_time": "2026-08-04T12:00:00Z",
+  "next_run_time": "2026-08-05T12:00:00Z",
   "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
   "params": {
     "query": "CREATE OR REPLACE TABLE `variant-finance-data-project.Utilities.New_User_Count_by_Day` AS\nSELECT \n    Date_of_Sale,\n    App_Name,\n    AFID_CHANNEL,\n    Spend_Country_Code_AFID,\n    Product_Name_Final AS Plan_Name,\n    COUNT(Order_Id) AS Daily_Users\nFROM \n    `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\nWHERE \n    Billing_Cycle = '0'\n    AND Date_of_Sale IS NOT NULL\n    AND Product_Name_Final IS NOT NULL\n    AND Date_of_Sale > DATE('2023-12-31')\nGROUP BY \n    Date_of_Sale,\n    App_Name,\n    AFID_CHANNEL,\n    Spend_Country_Code_AFID,\n    Product_Name_Final\nORDER BY \n    Date_of_Sale DESC,\n    App_Name,\n    AFID_CHANNEL,\n    Spend_Country_Code_AFID,\n    Product_Name_Final;"

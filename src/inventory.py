@@ -5,6 +5,7 @@ precisely at this point (before the collision-disambiguation suffix gets
 appended to its filename)."""
 from __future__ import annotations
 
+import csv
 import re
 from pathlib import Path
 
@@ -63,3 +64,10 @@ def write_excel(rows: list[tuple[str, str, str]], output_path: Path) -> None:
     ws.freeze_panes = "A2"
 
     wb.save(output_path)
+
+
+def write_csv(rows: list[tuple[str, str, str]], output_path: Path) -> None:
+    with open(output_path, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Type", "Dataset", "Name"])
+        writer.writerows(rows)

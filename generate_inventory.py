@@ -11,15 +11,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from openpyxl import Workbook
-from openpyxl.styles import Font
-
 from src.bq_client import (
     SAVED_QUERY_ENTITY_OVERRIDES,
     BigQueryBackupClient,
     name_to_path_segments,
 )
 from src.config import Config
+from src.inventory import write_csv, write_excel
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
@@ -89,37 +87,18 @@ def collect_rows(client: BigQueryBackupClient, config: Config) -> list[tuple[str
     return rows
 
 
-def write_excel(rows: list[tuple[str, str, str]], output_path: Path) -> None:
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Inventory"
-    ws.append(["Type", "Dataset", "Name"])
-    for cell in ws[1]:
-        cell.font = Font(bold=True)
-
-    for row in rows:
-        ws.append(row)
-
-    ws.column_dimensions["A"].width = 18
-    ws.column_dimensions["B"].width = 35
-    ws.column_dimensions["C"].width = 45
-    ws.freeze_panes = "A2"
-
-    wb.save(output_path)
-
-
 def main() -> int:
     config = Config.from_env()
     client = BigQueryBackupClient(config)
 
     rows = collect_rows(client, config)
 
-    output_path = PROJECT_ROOT / "bigquery_inventory.xlsx"
-    write_excel(rows, output_path)
-    # Print just the filename, not the full path — this project's folder
-    # name contains non-ASCII characters that some Windows terminals can't
+    write_excel(rows, PROJECT_ROOT / "bigquery_inventory.xlsx")
+    write_csv(rows, PROJECT_ROOT / "bigquery_inventory.csv")
+    # Print just filenames, not full paths — this project's folder name
+    # contains non-ASCII characters that some Windows terminals can't
     # print, which would otherwise crash this success message.
-    print(f"Wrote {len(rows)} rows to {output_path.name} in the project folder.")
+    print(f"Wrote {len(rows)} rows to bigquery_inventory.xlsx / bigquery_inventory.csv")
     return 0
 
 
