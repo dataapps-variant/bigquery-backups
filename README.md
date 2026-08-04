@@ -26,24 +26,27 @@ data and writes local backup files / GitHub commits.
    queries are read via the Dataform API — BigQuery Studio stores each saved
    query as its own single-file Dataform "repository" behind the scenes,
    which is why a separate Google service is involved here.
-2. **Write** — each object becomes one file under `backups/`:
+2. **Write** — every object lands in one folder per **entity** (dataset name,
+   or the dataset-like prefix in a saved/scheduled query's name), mirroring
+   how the BigQuery Studio "Queries" panel groups results when you search by
+   that prefix. There's no separate views/routines/saved_queries split:
    ```
    backups/
-     <dataset>/
-       views/<view_name>.sql
-       materialized_views/<view_name>.sql
-       routines/
-         procedures/<name>.sql
-         functions/<name>.sql
-     scheduled_queries/
-       <location>/<display_name>__<config_id>.json
-     saved_queries/
-       <location>/<display_name>.sql          (flat, e.g. "Sticky_Daily_Sales.sql")
-       <location>/<dataset>/<query_name>.sql  (nested, when named "dataset.query" in BigQuery)
+     Sticky_Data/
+       LMC_New_Users.sql        (a saved query named "Sticky_Data.LMC_New_Users")
+       Some_View.sql            (a view that actually lives in the Sticky_Data dataset)
+       Some_Procedure.sql       (a routine that actually lives in the Sticky_Data dataset)
+     Ad_spend_data/
+       Merged_Spend_View.sql
+       ...
+     A_Query_With_No_Dot_In_Its_Name.sql   (saved queries with no dataset-like
+                                             prefix land at the top level)
    ```
-   Saved queries named with a dot in BigQuery Studio (e.g.
-   `Sticky_Data.LMC_New_Users`) are automatically split into a real
-   `Sticky_Data/LMC_New_Users.sql` folder, matching that naming convention.
+   If two different objects would land on the exact same filename (e.g. a
+   routine and a saved query both named `Refund_Table` in the same folder),
+   the newer one is suffixed with its type (`Refund_Table__view.sql`) so
+   nothing gets silently overwritten — resolved the same way on every run,
+   not based on fetch order.
 3. **Sync deletions** — any file under `backups/` that no longer corresponds
    to a live BigQuery object (dropped view, deleted routine, or removed
    scheduled/saved query) is deleted, and now-empty folders are pruned.

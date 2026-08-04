@@ -36,4 +36,34 @@ def collect_all_objects(client: BigQueryBackupClient, config: Config) -> list[Ba
         logger.info("Found %d saved quer(y/ies)", len(saved_queries))
         objects.extend(saved_queries)
 
-    return objects
+    return _dedupe_paths(objects)
+
+
+def _dedupe_paths(objects: list[BackupObject]) -> list[BackupObject]:
+    """Different object types can land on the same path once everything is
+    grouped by entity name instead of by type (e.g. a routine and a saved
+    query both named "Refund_Table" in the same dataset). Resolve collisions
+    deterministically by tagging with `kind` rather than fetch order, so the
+    same object always lands on the same filename across runs."""
+    sorted_objects = sorted(objects, key=lambda o: (o.relative_path, o.kind, o.content))
+
+    used: set[str] = set()
+    result: list[BackupObject] = []
+    for obj in sorted_objects:
+        path = obj.relative_path
+        if path in used:
+            stem, dot, ext = path.rpartition(".")
+            base = f"{stem}__{obj.kind}" if dot else f"{path}__{obj.kind}"
+            candidate = f"{base}.{ext}" if dot else base
+            suffix_index = 2
+            while candidate in used:
+                candidate = f"{base}_{suffix_index}.{ext}" if dot else f"{base}_{suffix_index}"
+                suffix_index += 1
+            path = candidate
+            logger.warning(
+                "Path collision resolved: %s -> %s (kind=%s)", obj.relative_path, path, obj.kind
+            )
+
+        used.add(path)
+        result.append(BackupObject(relative_path=path, content=obj.content, kind=obj.kind))
+    return result

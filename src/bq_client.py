@@ -7,6 +7,12 @@ Saved queries aren't exposed by the BigQuery API itself — BigQuery Studio
 stores each one as its own single-file Dataform "repository" behind the
 scenes (marked with a `single-file-asset-type: sql` label), which is why
 this needs the Dataform client rather than the BigQuery one.
+
+Everything lands under one folder per "entity" (dataset name, or the
+dataset-like prefix in a saved/scheduled query's name) — mirroring how the
+BigQuery Studio "Queries" panel groups results when you search by that
+prefix — rather than being split into type-based subfolders like
+views/routines/saved_queries.
 """
 from __future__ import annotations
 
@@ -33,9 +39,10 @@ def safe_filename(name: str) -> str:
 
 
 def name_to_path_segments(display_name: str) -> list[str]:
-    """Split a dotted saved-query name (e.g. 'Sticky_Data.LMC_New_Users') into
-    real folder segments, mirroring the dataset.query naming convention used
-    in the BigQuery Studio Queries panel."""
+    """Split a dotted name (e.g. 'Sticky_Data.LMC_New_Users') into real
+    folder segments, mirroring the entity.query naming convention used in
+    the BigQuery Studio Queries panel. Names without a dot become a single
+    top-level file with no entity folder."""
     parts = [safe_filename(p) for p in display_name.split(".") if p.strip()]
     return parts or ["unnamed"]
 
@@ -46,6 +53,7 @@ class BackupObject:
 
     relative_path: str  # POSIX-style path relative to the backup root
     content: str
+    kind: str = "object"  # used to deterministically disambiguate path collisions
 
 
 class BigQueryBackupClient:
@@ -77,12 +85,13 @@ class BigQueryBackupClient:
         for row in rows:
             if not row.ddl:
                 continue
-            subfolder = "materialized_views" if row.table_type == "MATERIALIZED_VIEW" else "views"
+            kind = "materialized_view" if row.table_type == "MATERIALIZED_VIEW" else "view"
             filename = f"{safe_filename(row.table_name)}.sql"
             objects.append(
                 BackupObject(
-                    relative_path=f"{dataset_id}/{subfolder}/{filename}",
+                    relative_path=f"{dataset_id}/{filename}",
                     content=row.ddl.rstrip() + "\n",
+                    kind=kind,
                 )
             )
         return objects
@@ -103,12 +112,13 @@ class BigQueryBackupClient:
         for row in rows:
             if not row.ddl:
                 continue
-            subfolder = "procedures" if row.routine_type == "PROCEDURE" else "functions"
+            kind = "procedure" if row.routine_type == "PROCEDURE" else "function"
             filename = f"{safe_filename(row.routine_name)}.sql"
             objects.append(
                 BackupObject(
-                    relative_path=f"{dataset_id}/routines/{subfolder}/{filename}",
+                    relative_path=f"{dataset_id}/{filename}",
                     content=row.ddl.rstrip() + "\n",
+                    kind=kind,
                 )
             )
         return objects
@@ -133,11 +143,15 @@ class BigQueryBackupClient:
                 as_dict = MessageToDict(cfg._pb, preserving_proto_field_name=True)
                 display_name = cfg.display_name or cfg.name.rsplit("/", 1)[-1]
                 config_id = cfg.name.rsplit("/", 1)[-1]
-                filename = f"{safe_filename(display_name)}__{config_id}.json"
+                segments = name_to_path_segments(display_name)
+                folder = "/".join(segments[:-1])
+                filename = f"{segments[-1]}__{config_id}.json"
+                relative = f"{folder}/{filename}" if folder else filename
                 objects.append(
                     BackupObject(
-                        relative_path=f"scheduled_queries/{location}/{filename}",
+                        relative_path=relative,
                         content=_to_pretty_json(as_dict),
+                        kind="scheduled_query",
                     )
                 )
         return objects
@@ -189,12 +203,14 @@ class BigQueryBackupClient:
                     suffix = "" if len(file_paths) == 1 else f"__{safe_filename(file_path)}"
                     folder = "/".join(path_segments[:-1])
                     filename = f"{path_segments[-1]}{suffix}.sql"
-                    relative = f"saved_queries/{location}/{filename}"
-                    if folder:
-                        relative = f"saved_queries/{location}/{folder}/{filename}"
+                    relative = f"{folder}/{filename}" if folder else filename
                     content = file_resp.contents.decode("utf-8", errors="replace")
                     objects.append(
-                        BackupObject(relative_path=relative, content=content.rstrip() + "\n")
+                        BackupObject(
+                            relative_path=relative,
+                            content=content.rstrip() + "\n",
+                            kind="saved_query",
+                        )
                     )
         return objects
 
