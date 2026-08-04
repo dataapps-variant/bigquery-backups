@@ -1,11 +1,10 @@
 # BigQuery Backup Automation
 
 Backs up a BigQuery project's **views**, **materialized views**, **routines**
-(stored procedures & functions), **scheduled queries**, BigQuery Studio
-**saved queries**, and recent **query history** (every query actually run —
-SELECT, INSERT, DROP, CREATE TABLE, etc.) to version-controlled SQL/JSON
-files, deletes local backup files for objects that no longer exist in
-BigQuery, and commits + pushes the result to GitHub.
+(stored procedures & functions), **scheduled queries**, and BigQuery Studio
+**saved queries** to version-controlled SQL/JSON files, deletes local
+backup files for objects that no longer exist in BigQuery, and commits +
+pushes the result to GitHub.
 
 Everything this tool does against BigQuery is **read-only** — it never
 creates, edits, or deletes anything in your BigQuery project. It only reads
@@ -41,16 +40,13 @@ data and writes local backup files / GitHub commits.
      saved_queries/
        <location>/<display_name>.sql          (flat, e.g. "Sticky_Daily_Sales.sql")
        <location>/<dataset>/<query_name>.sql  (nested, when named "dataset.query" in BigQuery)
-     query_history/
-       <location>/<date>/<STATEMENT_TYPE>__<job_id>.sql
    ```
    Saved queries named with a dot in BigQuery Studio (e.g.
    `Sticky_Data.LMC_New_Users`) are automatically split into a real
    `Sticky_Data/LMC_New_Users.sql` folder, matching that naming convention.
 3. **Sync deletions** — any file under `backups/` that no longer corresponds
    to a live BigQuery object (dropped view, deleted routine, or removed
-   scheduled/saved query) is deleted, and now-empty folders are pruned. Query
-   history rolls off automatically as entries age past the lookback window.
+   scheduled/saved query) is deleted, and now-empty folders are pruned.
 4. **Commit & push** — stages all changes, commits with a timestamped
    message, and pushes to the configured GitHub remote/branch. If nothing
    new was created, it still pushes any earlier commit that hadn't made it
@@ -83,8 +79,6 @@ The service account (or user) needs, at minimum:
 - `roles/bigquery.admin` or the narrower `bigquery.transfers.get` / `list`
   permission, to read scheduled queries
 - `roles/dataform.viewer` on the project, to read saved queries
-- `roles/bigquery.resourceViewer` on the project (for `bigquery.jobs.listAll`),
-  to read query history across all users, not just the service account's own
 
 ### About `SAVED_QUERIES_LOCATIONS`
 
@@ -124,5 +118,3 @@ for the push step.
 - `BQ_LOCATIONS` controls which regions are checked for scheduled queries
   (transfer configs are region-scoped); defaults to `US`.
 - `SAVED_QUERIES_ENABLED=false` turns off saved-query backup entirely.
-- `QUERY_HISTORY_DAYS` controls how many days of query history to keep
-  (default 7). `QUERY_HISTORY_ENABLED=false` turns this off entirely.

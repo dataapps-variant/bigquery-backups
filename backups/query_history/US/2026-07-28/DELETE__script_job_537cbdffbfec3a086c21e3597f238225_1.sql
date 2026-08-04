@@ -1,9 +1,0 @@
--- job_id: script_job_537cbdffbfec3a086c21e3597f238225_1
--- user: dataapps@variant.net
--- statement_type: DELETE
--- created: 2026-07-28T06:40:05.220000+00:00
--- started: 2026-07-28T06:40:05.801000+00:00
--- ended: 2026-07-28T06:40:07.442000+00:00
-
-DELETE FROM `variant-finance-data-project.vatiant_finance_Google_Query_Test.Google_spend_snapshot_history`
-  WHERE snapshot_id != v_keep_snapshot_id

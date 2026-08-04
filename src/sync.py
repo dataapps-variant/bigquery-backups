@@ -79,6 +79,14 @@ def _prune_empty_dirs(root: Path) -> None:
         try:
             next(dirpath.iterdir())
         except StopIteration:
-            dirpath.rmdir()
+            try:
+                dirpath.rmdir()
+            except (PermissionError, OSError):
+                # A cloud-sync client (OneDrive, Dropbox, etc.) can briefly
+                # hold a lock on a directory right after a burst of file
+                # deletions. Leaving an empty folder behind is harmless —
+                # git doesn't track empty directories anyway — so skip it
+                # rather than let the whole backup run fail.
+                logger.warning("Could not remove empty directory (left in place): %s", dirpath)
         except FileNotFoundError:
             pass

@@ -1,4 +1,4 @@
-CREATE OR REPLACE TABLE `variant-finance-data-project.Extension_Refunds_Scenarios.Updated_Final_Dim_Table_Extension_Refund` AS
+CREATE OR REPLACE TABLE `variant-finance-data-project.R100.R100_Refund_Curves` AS
 
 WITH
 
