@@ -18,8 +18,15 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass
 
+from google.api_core.exceptions import (
+    DeadlineExceeded,
+    InternalServerError,
+    ServiceUnavailable,
+    TooManyRequests,
+)
 from google.cloud import bigquery
 from google.cloud import bigquery_datatransfer_v1
 from google.cloud import dataform_v1
@@ -30,6 +37,28 @@ from .config import Config
 logger = logging.getLogger(__name__)
 
 _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9_.-]+")
+
+_TRANSIENT_ERRORS = (ServiceUnavailable, InternalServerError, DeadlineExceeded, TooManyRequests)
+
+
+def _with_retry(fn, *, attempts: int = 4, base_delay: float = 1.5):
+    """Retry a Google API call a few times on transient (502/503/504-style)
+    errors before giving up. At the call volume this tool makes (hundreds of
+    requests per run for saved queries), an occasional transient failure is
+    expected and shouldn't silently drop an otherwise-healthy object from
+    the backup."""
+    last_exc: Exception | None = None
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn()
+        except _TRANSIENT_ERRORS as exc:
+            last_exc = exc
+            if attempt < attempts:
+                logger.warning(
+                    "Transient error (attempt %d/%d), retrying: %s", attempt, attempts, exc
+                )
+                time.sleep(base_delay * attempt)
+    raise last_exc
 
 
 def safe_filename(name: str) -> str:
@@ -77,7 +106,7 @@ class BigQueryBackupClient:
         """
         objects: list[BackupObject] = []
         try:
-            rows = self.bq.query(query).result()
+            rows = _with_retry(lambda: self.bq.query(query).result())
         except Exception:
             logger.exception("Failed to list views for dataset %s", dataset_id)
             return objects
@@ -104,7 +133,7 @@ class BigQueryBackupClient:
         """
         objects: list[BackupObject] = []
         try:
-            rows = self.bq.query(query).result()
+            rows = _with_retry(lambda: self.bq.query(query).result())
         except Exception:
             logger.exception("Failed to list routines for dataset %s", dataset_id)
             return objects
@@ -130,8 +159,12 @@ class BigQueryBackupClient:
                 f"projects/{self.config.gcp_project_id}/locations/{location}"
             )
             try:
-                configs = self.dts.list_transfer_configs(
-                    request={"parent": parent, "data_source_ids": ["scheduled_query"]}
+                configs = _with_retry(
+                    lambda: list(
+                        self.dts.list_transfer_configs(
+                            request={"parent": parent, "data_source_ids": ["scheduled_query"]}
+                        )
+                    )
                 )
             except Exception:
                 logger.exception(
@@ -161,7 +194,7 @@ class BigQueryBackupClient:
         for location in self.config.saved_queries_locations:
             parent = f"projects/{self.config.gcp_project_id}/locations/{location}"
             try:
-                repos = list(self.dataform.list_repositories(parent=parent))
+                repos = _with_retry(lambda: list(self.dataform.list_repositories(parent=parent)))
             except Exception:
                 logger.exception(
                     "Failed to list saved queries in location %s", location
@@ -173,9 +206,11 @@ class BigQueryBackupClient:
                     continue  # a real Dataform repo, not a BigQuery Studio saved query
 
                 try:
-                    entries = list(
-                        self.dataform.query_repository_directory_contents(
-                            request={"name": repo.name}
+                    entries = _with_retry(
+                        lambda: list(
+                            self.dataform.query_repository_directory_contents(
+                                request={"name": repo.name}
+                            )
                         )
                     )
                 except Exception:
@@ -189,8 +224,10 @@ class BigQueryBackupClient:
 
                 for file_path in file_paths:
                     try:
-                        file_resp = self.dataform.read_repository_file(
-                            request={"name": repo.name, "path": file_path}
+                        file_resp = _with_retry(
+                            lambda: self.dataform.read_repository_file(
+                                request={"name": repo.name, "path": file_path}
+                            )
                         )
                     except Exception:
                         logger.exception(

@@ -1,5 +1,5 @@
-CREATE OR REPLACE VIEW `variant-finance-data-project.OpenAI_Ads.openai_ads_campaign_report_enriched` AS
-SELECT
+CREATE VIEW `variant-finance-data-project.OpenAI_Ads.openai_ads_campaign_report_enriched`
+AS SELECT
   r.Day,
   r.`Campaign tracking ID`,
   r.`Campaign name`,

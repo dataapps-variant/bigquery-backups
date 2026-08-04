@@ -1,6 +1,5 @@
-CREATE OR REPLACE VIEW `variant-finance-data-project.OpenAI_Ads.OpenAI_merged_final_spend`
-AS
-WITH
+CREATE VIEW `variant-finance-data-project.OpenAI_Ads.OpenAI_merged_final_spend`
+AS WITH
   -- Cost per campaign × ad group × URL, with AFID extracted from the URL.
   afid_agg AS (
     SELECT
