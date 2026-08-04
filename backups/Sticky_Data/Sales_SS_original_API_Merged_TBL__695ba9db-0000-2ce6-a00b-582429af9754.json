@@ -5,7 +5,7 @@
   "display_name": "Sticky_Data.Sales_SS_original_API_Merged_TBL",
   "email_preferences": {},
   "name": "projects/1041741270489/locations/us/transferConfigs/695ba9db-0000-2ce6-a00b-582429af9754",
-  "next_run_time": "2026-08-04T09:26:00Z",
+  "next_run_time": "2026-08-04T10:26:00Z",
   "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
   "params": {
     "query": "CREATE OR REPLACE TABLE `Sticky_Data.Sales_SS_original_API_Merged_TBL` AS\r\nSELECT \r\n  s.*,\r\n  a.Product_Name_Final_Main,\r\n  a.Allocation_Percentage,\r\n  s.Plan_Price_USD * a.Allocation_Percentage AS Plan_Price_Allocated_USD,\r\n  s.Order_Total_USD * a.Allocation_Percentage AS Order_Total_Allocated_USD,\r\n  s.Sales_Tax_Amount_USD * a.Allocation_Percentage AS Sales_Tax_Amount_Allocated_USD,\r\n  (s.Order_Price_Net_of_Tax_USD - s.Refund_Amount_USD) * a.Allocation_Percentage AS Order_Price_Net_of_Tax_Allocated_USD,\r\n  s.Plan_Price_Net_of_Tax_USD * a.Allocation_Percentage AS Plan_Price_Net_of_Tax_Allocated_USD,\r\n  COALESCE(vpu.Product_Name_Final_Merged, a.Product_Name_Final_Main) AS Product_Name_Final_Main_Merged\r\n \r\nFROM `Sticky_Data.Sticky_Dim_SS` a \r\nLEFT JOIN `Sticky_Data.Sticky_data_API_original_V_Merged_TBL` s\r\n  ON a.Product_Name_Final_SS = s.Product_Name_Final  \r\n  AND s.Date_of_Sale BETWEEN a.Start_Date AND a.End_Date\r\nLEFT JOIN `variant-finance-data-project.VPU.VPU_Dim_MergedPlansDetails` vpu\r\n  ON a.Product_Name_Final_Main = vpu.Product_Name_final\r\n  AND s.Date_of_Sale BETWEEN vpu.Start_Date AND vpu.End_Date"

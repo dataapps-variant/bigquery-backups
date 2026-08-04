@@ -15,6 +15,7 @@ from src.backup import collect_all_objects
 from src.bq_client import BigQueryBackupClient
 from src.config import Config, ConfigError
 from src.git_utils import GitError, commit, ensure_repo, has_staged_changes, push, stage_all
+from src.inventory import build_rows, write_excel
 from src.sync import sync_backup_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -58,6 +59,11 @@ def main() -> int:
     )
     for deleted_path in result.deleted:
         logger.info("  deleted: %s", deleted_path)
+
+    inventory_rows = build_rows(objects)
+    inventory_path = PROJECT_ROOT / "inventory.xlsx"
+    write_excel(inventory_rows, inventory_path)
+    logger.info("Wrote inventory (%d rows) to %s", len(inventory_rows), inventory_path.name)
 
     if not config.git_push_enabled:
         logger.info("GIT_PUSH_ENABLED is false — skipping git commit/push")
