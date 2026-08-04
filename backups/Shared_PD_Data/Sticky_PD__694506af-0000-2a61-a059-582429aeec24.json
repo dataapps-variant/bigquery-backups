@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Shared_PD_Data.Sticky_PD",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/694506af-0000-2a61-a059-582429aeec24",
+  "next_run_time": "2026-08-04T10:30:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "Create or replace table `variant-finance-data-project.Shared_PD_Data.Sticky_PD` as\nSELECT * FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` \nWhere Entity_Name='PD'\n"
+  },
+  "schedule": "every day 10:30",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 10:30"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:05:38.728668Z",
+  "user_id": "-2013332070679316768"
+}

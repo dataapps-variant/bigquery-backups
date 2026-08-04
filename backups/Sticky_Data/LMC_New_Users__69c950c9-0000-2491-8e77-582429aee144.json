@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Sticky_Data.LMC_New_Users",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/69c950c9-0000-2491-8e77-582429aee144",
+  "next_run_time": "2026-08-04T09:00:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "DECLARE months_list STRING;\nDECLARE query_str STRING;\n\n-- Step 1: Dynamically build the list of months in chronological order\nSET months_list = (\n  SELECT STRING_AGG(month_quoted ORDER BY yr, mn)\n  FROM (\n    SELECT DISTINCT\n      EXTRACT(YEAR FROM PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', Acquisition_Date_Time)) AS yr,\n      EXTRACT(MONTH FROM PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', Acquisition_Date_Time)) AS mn,\n      FORMAT(\"'%s'\",\n        FORMAT('%d-%d-%d', 1,\n          EXTRACT(MONTH FROM PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', Acquisition_Date_Time)),\n          EXTRACT(YEAR FROM PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', Acquisition_Date_Time))\n        )\n      ) AS month_quoted\n    FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\n    WHERE PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', Acquisition_Date_Time)\n          >= TIMESTAMP('2023-01-01')\n      AND PARSE_TIMESTAMP('%Y-%m-%d %H:%M:%S', Acquisition_Date_Time)\n          < TIMESTAMP(DATE_TRUNC(CURRENT_DATE(), MONTH))\n  )\n);\n\n-- Step 2: Build and execute the full query\nSET query_str = FORMAT(\"\"\"\n  CREATE OR REPLACE TABLE `variant-finance-data-project.Sticky_Data.LMC_New_Users` AS\n  WITH product_map AS (\n    SELECT DISTINCT\n      Concat AS lookup_key,\n      Updated_Concat\n    FROM `variant-finance-data-project.Sticky_Data.R100_BQ_Updated_Product_Name`\n  ),\n\n  filtered AS (\n    SELECT\n      CASE\n        WHEN LEFT(COALESCE(pm.Updated_Concat, m.Product_Name_Final), 2) = 'CT'\n             AND m.Spend_Country_Code_AFID = 'JP'\n          THEN CONCAT(COALESCE(pm.Updated_Concat, m.Product_Name_Final), '-JP')\n        WHEN LEFT(COALESCE(pm.Updated_Concat, m.Product_Name_Final), 2) = 'CT'\n             AND (m.Spend_Country_Code_AFID != 'JP' OR m.Spend_Country_Code_AFID IS NULL)\n          THEN CONCAT(COALESCE(pm.Updated_Concat, m.Product_Name_Final), '-Non-JP')\n        ELSE COALESCE(pm.Updated_Concat, m.Product_Name_Final)\n      END AS Product_Group,\n      FORMAT('%%d-%%d-%%d', 1,\n        EXTRACT(MONTH FROM PARSE_TIMESTAMP('%%Y-%%m-%%d %%H:%%M:%%S', m.Acquisition_Date_Time)),\n        EXTRACT(YEAR FROM PARSE_TIMESTAMP('%%Y-%%m-%%d %%H:%%M:%%S', m.Acquisition_Date_Time))\n      ) AS Month_Key,\n      m.Updated_Cust_ID\n    FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` m\n    LEFT JOIN product_map pm\n      ON m.Product_Name_Final = pm.lookup_key\n    WHERE\n      RIGHT(m.Product_Name_Final, 2) != 'SS'\n      AND (\n        (RIGHT(m.Product_Name_Final, 2) = 'NT' AND m.Billing_Cycle_Updated = 1)\n        OR\n        (RIGHT(m.Product_Name_Final, 2) != 'NT' AND m.Billing_Cycle_Updated = 0)\n      )\n      AND PARSE_TIMESTAMP('%%Y-%%m-%%d %%H:%%M:%%S', m.Acquisition_Date_Time)\n          >= TIMESTAMP('2023-01-01')\n      AND PARSE_TIMESTAMP('%%Y-%%m-%%d %%H:%%M:%%S', m.Acquisition_Date_Time)\n          < TIMESTAMP(DATE_TRUNC(CURRENT_DATE(), MONTH))\n  ),\n\n  aggregated AS (\n    SELECT\n      Product_Group,\n      Month_Key,\n      COUNT(DISTINCT Updated_Cust_ID) AS User_Count\n    FROM filtered\n    GROUP BY 1, 2\n  )\n\n  SELECT *\n  FROM aggregated\n  PIVOT (\n    SUM(User_Count)\n    FOR Month_Key IN (%s)\n  )\n  ORDER BY Product_Group\n\"\"\", months_list);\n\nEXECUTE IMMEDIATE query_str;"
+  },
+  "schedule": "every day 09:00",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 09:00"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:14:10.728756Z",
+  "user_id": "-7598719194024014828"
+}

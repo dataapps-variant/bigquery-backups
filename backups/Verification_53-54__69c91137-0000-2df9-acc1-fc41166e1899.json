@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Verification_53-54",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/69c91137-0000-2df9-acc1-fc41166e1899",
+  "next_run_time": "2026-08-04T09:36:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "-- =====================================================\n-- VERIFICATION SQL #52 & #53 (Combined)\n-- Purpose: Show AFIDs mapped with MORE THAN ONE Channel_name (V52)\n--          and MORE THAN ONE Channel_type (V53)\n-- Table: Ad_spend_data.Merged_Spend_Split_TBL\n-- =====================================================\n\nCREATE OR REPLACE TABLE `variant-finance-data-project.Verifications.Verification_53-54` AS\n\nWITH afid_multi_channel_name AS (\n  -- Find AFIDs with MORE THAN ONE Channel_name\n  SELECT\n    Final_URL_suffix_AFID\n  FROM \n    `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL`\n  WHERE \n    Final_URL_suffix_AFID IS NOT NULL \n    AND Final_URL_suffix_AFID != ''\n  GROUP BY \n    Final_URL_suffix_AFID\n  HAVING \n    COUNT(DISTINCT Channel_name) > 1\n),\n\nafid_multi_channel_type AS (\n  -- Find AFIDs with MORE THAN ONE Channel_type\n  SELECT\n    Final_URL_suffix_AFID\n  FROM \n    `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL`\n  WHERE \n    Final_URL_suffix_AFID IS NOT NULL \n    AND Final_URL_suffix_AFID != ''\n  GROUP BY \n    Final_URL_suffix_AFID\n  HAVING \n    COUNT(DISTINCT Channel_type) > 1\n),\n\nproblem_afids AS (\n  -- Combine AFIDs that have issues with either Channel_name or Channel_type\n  SELECT Final_URL_suffix_AFID FROM afid_multi_channel_name\n  UNION DISTINCT\n  SELECT Final_URL_suffix_AFID FROM afid_multi_channel_type\n)\n\n-- Final output: All distinct combinations for problem AFIDs\nSELECT DISTINCT\n  base.Final_URL_suffix_AFID,\n  base.Channel_name,\n  base.Channel_type\nFROM \n  `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL` base\nINNER JOIN \n  problem_afids pa\nON \n  base.Final_URL_suffix_AFID = pa.Final_URL_suffix_AFID\nORDER BY \n  base.Final_URL_suffix_AFID,\n  base.Channel_name,\n  base.Channel_type;"
+  },
+  "schedule": "every 1 hours",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every 1 hours"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-15T17:36:30.322616Z",
+  "user_id": "-7598719194024014828"
+}

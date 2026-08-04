@@ -1,0 +1,25 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Merged_Spend_View_Updated_lagged",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6aada008-0000-2050-949d-b8db38f4de22",
+  "next_run_time": "2026-08-04T09:40:00Z",
+  "params": {
+    "query": "CREATE OR REPLACE TABLE\r\n  `variant-finance-data-project.Ad_spend_data.Merged_Spend_View_Updated_lagged`\r\nAS\r\nSELECT\r\n  *\r\nFROM `variant-finance-data-project.Ad_spend_data.Merged_Spend_View_Updated`;"
+  },
+  "schedule": "every 1 hours",
+  "schedule_options": {
+    "start_time": "2026-07-31T15:40:00Z"
+  },
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every 1 hours",
+      "start_time": "2026-07-31T15:40:00Z"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-07-31T17:24:46.127865Z",
+  "user_id": "-7598719194024014828"
+}

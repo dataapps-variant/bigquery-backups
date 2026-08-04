@@ -169,11 +169,15 @@ class BigQueryBackupClient:
                 f"projects/{self.config.gcp_project_id}/locations/{location}"
             )
             try:
+                # The API's data_source_ids filter turned out to silently
+                # return an empty list for this project instead of actually
+                # filtering, so fetch everything and filter client-side
+                # instead. A large project can also take longer than the
+                # client's default ~20s timeout to list, hence the explicit
+                # timeout here.
                 configs = _with_retry(
                     lambda: list(
-                        self.dts.list_transfer_configs(
-                            request={"parent": parent, "data_source_ids": ["scheduled_query"]}
-                        )
+                        self.dts.list_transfer_configs(request={"parent": parent}, timeout=120)
                     )
                 )
             except Exception:
@@ -183,6 +187,8 @@ class BigQueryBackupClient:
                 continue
 
             for cfg in configs:
+                if cfg.data_source_id != "scheduled_query":
+                    continue  # skip other transfer types (e.g. Google Ads connectors)
                 as_dict = MessageToDict(cfg._pb, preserving_proto_field_name=True)
                 display_name = cfg.display_name or cfg.name.rsplit("/", 1)[-1]
                 config_id = cfg.name.rsplit("/", 1)[-1]

@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "google ads backup",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/68d565ad-0000-2596-b0e1-24058883e63c",
+  "next_run_time": "2026-08-05T07:00:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "DROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.vatiant_finance_Google_Query_Snapshots.ad_performance_snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.vatiant_finance_Google_Query_Snapshots.ad_performance_snapshot`\r\nCLONE `variant-finance-data-project.vatiant_finance_Google_Query_Test.ad_performance`;\r\n\r\nDROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.vatiant_finance_Google_Query_Snapshots.campaign_performance_snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.vatiant_finance_Google_Query_Snapshots.campaign_performance_snapshot`\r\nCLONE `variant-finance-data-project.vatiant_finance_Google_Query_Test.campaign_performance`;\r\n\r\n\r\nDROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.vatiant_finance_Google_Query_Snapshots.location_view_snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.vatiant_finance_Google_Query_Snapshots.location_view_snapshot`\r\nCLONE `variant-finance-data-project.vatiant_finance_Google_Query_Test.location_view`;\r\n"
+  },
+  "schedule": "every day 07:00",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 07:00"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:05:00.936669Z",
+  "user_id": "-7598719194024014828"
+}

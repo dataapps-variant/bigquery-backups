@@ -1,0 +1,22 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "auction-insights-ranked-refresh",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6a570c50-0000-20ee-912b-14223bc431e6",
+  "next_run_time": "2026-08-04T12:30:00Z",
+  "params": {
+    "query": "CREATE OR REPLACE TABLE `variant-finance-data-project.vatiant_finance_Google_Query_Test.auction_insights_ranked` AS\r\nWITH base AS (\r\n    SELECT DISTINCT event_date, account_name, display_url_domain,\r\n        SAFE_CAST(impression_share AS FLOAT64) AS impression_share\r\n    FROM `variant-finance-data-project.vatiant_finance_Google_Query_Test.auction_insights_sheets`\r\n    WHERE impression_share IS NOT NULL AND impression_share NOT LIKE '< %'\r\n),\r\nprev_date AS (\r\n    SELECT a.event_date, a.account_name, MAX(b.event_date) AS prev_event_date\r\n    FROM (SELECT DISTINCT event_date, account_name FROM base) a\r\n    LEFT JOIN (SELECT DISTINCT event_date, account_name FROM base) b\r\n        ON a.account_name = b.account_name AND b.event_date < a.event_date\r\n    GROUP BY a.event_date, a.account_name\r\n),\r\nranked AS (\r\n    SELECT event_date, account_name AS app_name, display_url_domain, impression_share,\r\n        RANK() OVER (PARTITION BY event_date, account_name\r\n            ORDER BY impression_share DESC) AS rank_today\r\n    FROM base\r\n),\r\nwith_prev AS (\r\n    SELECT t.*, IFNULL(y.rank_today, 0) AS rank_yesterday,\r\n        IFNULL(y.rank_today, 0) - t.rank_today AS rank_change\r\n    FROM ranked t\r\n    JOIN prev_date p ON t.event_date = p.event_date AND t.app_name = p.account_name\r\n    LEFT JOIN ranked y ON t.app_name = y.app_name\r\n        AND t.display_url_domain = y.display_url_domain\r\n        AND y.event_date = p.prev_event_date\r\n)\r\nSELECT\r\n    w.event_date,\r\n    IFNULL(d.App_Name, w.app_name) AS app_name,\r\n    w.display_url_domain,\r\n    w.impression_share,\r\n    w.rank_today,\r\n    w.rank_yesterday,\r\n    w.rank_change\r\nFROM with_prev w\r\nLEFT JOIN `variant-finance-data-project.vatiant_finance_Google_Query_Test.Dim_auction_app_name` d\r\n    ON w.app_name = d.account_name;"
+  },
+  "schedule": "every day 12:30",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 12:30"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-06-29T18:18:32.839507Z",
+  "user_id": "-7196919230729609440"
+}

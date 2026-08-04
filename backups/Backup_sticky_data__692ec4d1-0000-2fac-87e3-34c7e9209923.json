@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Backup_sticky_data",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/692ec4d1-0000-2fac-87e3-34c7e9209923",
+  "next_run_time": "2026-08-05T07:00:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "DROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_CN_2_Snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_CN_2_Snapshot`\r\nCLONE `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_CN_2`;\r\n\r\nDROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_CT_1_Snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_CT_1_Snapshot`\r\nCLONE `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_CT_1`;\r\n\r\n\r\nDROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_PD_Snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_PD_Snapshot`\r\nCLONE `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_PD`;\r\n\r\nDROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_AT_1_Snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_AT_1_Snapshot`\r\nCLONE `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_AT_1`;\r\n\r\nDROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_FS_4_Snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_FS_4_Snapshot`\r\nCLONE `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_FS_4`;\r\n\r\nDROP SNAPSHOT TABLE IF EXISTS `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_JF_1_Snapshot`;\r\n\r\nCREATE SNAPSHOT TABLE `variant-finance-data-project.Sticky_Data_Snapshots.Sticky_data_API_original_JF_1_Snapshot`\r\nCLONE `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_JF_1`;\r\n"
+  },
+  "schedule": "every day 07:00",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 07:00"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:05:26.725837Z",
+  "user_id": "-7598719194024014828"
+}

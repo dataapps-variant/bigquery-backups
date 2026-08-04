@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Sticky_Reports.Major_Metrics_Report",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6904fe7e-0000-22e6-a116-d43a2cc809af",
+  "next_run_time": "2026-08-04T10:30:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "CREATE OR REPLACE TABLE `variant-finance-data-project.Sticky_Reports.Major_Metrics_Report` AS\n\nWITH revenue_users AS (\n  SELECT\n    Date_of_Sale AS Report_Date,\n    Entity_Name,\n    CASE \n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID = 'JP' THEN 'CT-JP'\n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID != 'JP' THEN 'CT-Non-JP'\n      ELSE App_Name\n    END AS App_Name,\n    SUM(Order_Price_Net_of_Tax_USD) AS Net_Revenue,\n    COUNT(DISTINCT CASE \n      WHEN Trial_Type != 'NT' AND Billing_Cycle_Updated = 0 THEN Updated_Cust_ID\n      WHEN Trial_Type = 'NT' AND Billing_Cycle_Updated = 1 THEN Updated_Cust_ID\n    END) AS Sticky_New_Users\n  FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\n  GROUP BY Date_of_Sale, \n    Entity_Name,\n    CASE \n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID = 'JP' THEN 'CT-JP'\n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID != 'JP' THEN 'CT-Non-JP'\n      ELSE App_Name\n    END\n),\n\nsingle_sale_users AS (\n  SELECT\n    Date_of_Sale AS Report_Date,\n    Entity_Name,\n    CASE \n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID = 'JP' THEN 'CT-JP'\n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID != 'JP' THEN 'CT-Non-JP'\n      ELSE App_Name\n    END AS App_Name,\n    COUNT(DISTINCT CASE \n      WHEN Trial_Type != 'NT' AND Billing_Cycle_Updated = 0 THEN Updated_Cust_ID\n      WHEN Trial_Type = 'NT' AND Billing_Cycle_Updated = 1 THEN Updated_Cust_ID\n    END) AS SS_New_Users\n  FROM `variant-finance-data-project.Sticky_Data.Sales_SS_original_API_Merged_TBL`\n  GROUP BY Date_of_Sale, \n    Entity_Name,\n    CASE \n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID = 'JP' THEN 'CT-JP'\n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID != 'JP' THEN 'CT-Non-JP'\n      ELSE App_Name\n    END\n),\n\ncombined_users AS (\n  SELECT\n    COALESCE(r.Report_Date, s.Report_Date) AS Report_Date,\n    COALESCE(r.Entity_Name, s.Entity_Name) AS Entity_Name,\n    COALESCE(r.App_Name, s.App_Name) AS App_Name,\n    COALESCE(r.Net_Revenue, 0) AS Net_Revenue,\n    COALESCE(r.Sticky_New_Users, 0) AS Daily_New_Users,\n    COALESCE(r.Sticky_New_Users, 0) - COALESCE(s.SS_New_Users, 0) AS Daily_Regular_Users,\n    COALESCE(s.SS_New_Users, 0) AS Daily_SS_Users\n  FROM revenue_users r\n  FULL OUTER JOIN single_sale_users s\n    ON r.Report_Date = s.Report_Date\n    AND r.Entity_Name = s.Entity_Name\n    AND r.App_Name = s.App_Name\n),\n\nspend_data AS (\n  SELECT\n    Date AS Report_Date,\n    App_Name,\n    SUM(allocated_spend) AS Daily_Spend\n  FROM `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL`\n  GROUP BY Date, App_Name\n),\n\nentity_lookup AS (\n  SELECT DISTINCT\n    CASE \n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID = 'JP' THEN 'CT-JP'\n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID != 'JP' THEN 'CT-Non-JP'\n      ELSE App_Name\n    END AS App_Name,\n    Entity_Name\n  FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\n)\n\nSELECT\n  COALESCE(c.Report_Date, s.Report_Date) AS Report_Date,\n  COALESCE(c.Entity_Name, e.Entity_Name) AS Entity_Name,\n  COALESCE(c.App_Name, s.App_Name) AS App_Name,\n  COALESCE(c.Net_Revenue, 0) AS Net_Revenue,\n  COALESCE(c.Daily_New_Users, 0) AS Daily_New_Users,\n  COALESCE(s.Daily_Spend, 0) AS Daily_Spend,\n  CASE \n    WHEN COALESCE(c.Daily_New_Users, 0) = 0 THEN NULL\n    ELSE COALESCE(s.Daily_Spend, 0) / c.Daily_New_Users\n  END AS Daily_CPA,\n  COALESCE(c.Daily_Regular_Users, 0) AS Daily_Regular_Users,\n  COALESCE(c.Daily_SS_Users, 0) AS Daily_SS_Users\nFROM combined_users c\nFULL OUTER JOIN spend_data s\n  ON c.Report_Date = s.Report_Date\n  AND c.App_Name = s.App_Name\nLEFT JOIN entity_lookup e\n  ON COALESCE(c.App_Name, s.App_Name) = e.App_Name\nWHERE COALESCE(c.Daily_New_Users, 0) > 0 OR COALESCE(s.Daily_Spend, 0) > 0 OR COALESCE(c.Net_Revenue, 0) > 0\nORDER BY Report_Date DESC, App_Name;"
+  },
+  "schedule": "every day 10:30",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 10:30"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:05:23.022021Z",
+  "user_id": "-7598719194024014828"
+}
