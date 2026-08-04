@@ -67,6 +67,15 @@ def safe_filename(name: str) -> str:
     return cleaned
 
 
+# Manual, case-by-case overrides for saved queries whose literal BigQuery
+# name doesn't reflect where they conceptually belong. Confirmed one at a
+# time with the project owner — not an automatic/fuzzy rule, since guessing
+# by keyword match risks misfiling unrelated queries.
+SAVED_QUERY_ENTITY_OVERRIDES: dict[str, str] = {
+    "Utilities.CWC_base_data_TBL": "CWC",
+}
+
+
 def name_to_path_segments(display_name: str) -> list[str]:
     """Split a dotted name (e.g. 'Sticky_Data.LMC_New_Users') into real
     folder segments, mirroring the entity.query naming convention used in
@@ -221,6 +230,9 @@ class BigQueryBackupClient:
 
                 file_paths = [entry.file for entry in entries if entry.file]
                 path_segments = name_to_path_segments(repo.display_name)
+                override_entity = SAVED_QUERY_ENTITY_OVERRIDES.get(repo.display_name)
+                if override_entity:
+                    path_segments = [override_entity, path_segments[-1]]
 
                 for file_path in file_paths:
                     try:
