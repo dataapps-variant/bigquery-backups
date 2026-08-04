@@ -73,6 +73,7 @@ def safe_filename(name: str) -> str:
 # by keyword match risks misfiling unrelated queries.
 SAVED_QUERY_ENTITY_OVERRIDES: dict[str, str] = {
     "Utilities.CWC_base_data_TBL": "CWC",
+    "Create_LinkedIn_AdsURL_Table": "Linkedin_ad_spend_data",
 }
 
 
