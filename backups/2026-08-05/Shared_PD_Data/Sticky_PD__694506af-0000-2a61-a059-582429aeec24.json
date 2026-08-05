@@ -5,7 +5,7 @@
   "display_name": "Shared_PD_Data.Sticky_PD",
   "email_preferences": {},
   "name": "projects/1041741270489/locations/us/transferConfigs/694506af-0000-2a61-a059-582429aeec24",
-  "next_run_time": "2026-08-05T10:30:00Z",
+  "next_run_time": "2026-08-06T10:30:00Z",
   "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
   "params": {
     "query": "Create or replace table `variant-finance-data-project.Shared_PD_Data.Sticky_PD` as\nSELECT * FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` \nWhere Entity_Name='PD'\n"

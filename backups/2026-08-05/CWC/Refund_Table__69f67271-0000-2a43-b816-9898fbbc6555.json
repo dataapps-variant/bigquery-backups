@@ -17,7 +17,7 @@
       "schedule": "every day 10:20"
     }
   },
-  "state": "RUNNING",
+  "state": "SUCCEEDED",
   "update_time": "2026-04-10T10:17:01.124283Z",
   "user_id": "-7598719194024014828"
 }
