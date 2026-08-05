@@ -16,6 +16,7 @@ from src.bq_client import BigQueryBackupClient
 from src.config import Config, ConfigError
 from src.git_utils import GitError, commit, ensure_repo, has_staged_changes, push, stage_all
 from src.inventory import build_rows, write_csv, write_excel
+from src.snapshots import prune_old_snapshots
 from src.sync import sync_backup_dir
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -44,13 +45,17 @@ def main() -> int:
         if config.backup_root_dir.is_absolute()
         else PROJECT_ROOT / config.backup_root_dir
     )
+    snapshot_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    snapshot_root = backup_root / snapshot_date
 
-    logger.info("Backing up project %s to %s", config.gcp_project_id, backup_root)
+    logger.info(
+        "Backing up project %s to %s (snapshot %s)", config.gcp_project_id, backup_root, snapshot_date
+    )
 
     client = BigQueryBackupClient(config)
     objects = collect_all_objects(client, config)
 
-    result = sync_backup_dir(backup_root, objects)
+    result = sync_backup_dir(snapshot_root, objects)
     logger.info(
         "Sync complete: %d written/updated, %d unchanged, %d deleted",
         result.written,
@@ -59,6 +64,14 @@ def main() -> int:
     )
     for deleted_path in result.deleted:
         logger.info("  deleted: %s", deleted_path)
+
+    removed_snapshots = prune_old_snapshots(backup_root, config.snapshot_retention_count)
+    if removed_snapshots:
+        logger.info(
+            "Pruned to the latest %d snapshot(s), removed: %s",
+            config.snapshot_retention_count,
+            ", ".join(sorted(removed_snapshots)),
+        )
 
     # Local convenience exports, not part of the backup itself — each is
     # independent so one being open in Excel elsewhere never blocks the

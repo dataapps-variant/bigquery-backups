@@ -22,6 +22,11 @@ def _list_env(name: str) -> list[str]:
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
+def _int_env(name: str, default: int) -> int:
+    value = os.environ.get(name, "").strip()
+    return int(value) if value else default
+
+
 class ConfigError(RuntimeError):
     """Raised when required configuration is missing or invalid."""
 
@@ -37,6 +42,7 @@ class Config:
     saved_queries_locations: list[str]
 
     backup_root_dir: Path
+    snapshot_retention_count: int
 
     git_push_enabled: bool
     git_remote_url: str | None
@@ -73,6 +79,7 @@ class Config:
             saved_queries_enabled=_bool_env("SAVED_QUERIES_ENABLED", True),
             saved_queries_locations=_list_env("SAVED_QUERIES_LOCATIONS") or ["us-central1"],
             backup_root_dir=Path(os.environ.get("BACKUP_ROOT_DIR", "backups")),
+            snapshot_retention_count=_int_env("SNAPSHOT_RETENTION_COUNT", 3),
             git_push_enabled=git_push_enabled,
             git_remote_url=git_remote_url,
             git_branch=os.environ.get("GIT_BRANCH", "main").strip() or "main",

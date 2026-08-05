@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "ICARUS_Multi.Plan_List",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6974ab0c-0000-2519-a63b-088bc8769149",
+  "next_run_time": "2026-08-06T08:30:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "\n-- Create table: variant-finance-data-project.ICARUS_Multi.Plan_List\n-- This table contains distinct Product_Name_Final_Merged where we had any user in last 90 days\n-- Products with both JP and Non-JP will have 2 separate rows\n\nCREATE OR REPLACE TABLE `variant-finance-data-project.ICARUS_Multi.Plan_List` AS\n\nWITH config AS (\n  SELECT DATE('2025-01-01') AS start_date  -- Change this date as needed\n),\n\nFirst_Sale_Dates AS (\n  SELECT \n      Product_Name_Final_Merged,\n      MIN(Date_of_Sale) AS Earliest_Sale_Date\n  FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\n  WHERE Product_Name_Final_Merged IS NOT NULL\n    AND Product_Name_Final_Merged != ''\n  GROUP BY Product_Name_Final_Merged\n)\n\nSELECT \n    main.Product_Name_Final_Merged AS Product_Name_Final,\n    main.Entity_Name,\n    main.App_Name,\n    main.Trial_Type,\n    main.Trial_Period,\n    main.Currency,\n    MIN(main.Trial_Price) AS Trial_Price,\n    COALESCE(\n        MIN(CASE WHEN dim.Currency = main.Currency THEN dim.Product_Price END),\n        MIN(CASE WHEN TRIM(COALESCE(dim.Currency, '')) = '' THEN dim.Product_Price END)\n    ) AS Regular_Price,\n    \n    -- Country_Code: will create separate rows for JP and Non-JP\n    CASE \n        WHEN main.App_Name = 'CT' THEN \n            CASE \n                WHEN main.Spend_Country_Code_AFID = 'JP' THEN 'JP'\n                ELSE 'Non-JP'\n            END\n        ELSE ''\n    END AS Country_Code,\n\n    -- Earliest sale date for the plan, floored at 2025-01-01\n    GREATEST(\n        COALESCE(MIN(fsd.Earliest_Sale_Date), DATE '2025-01-01'),\n        DATE '2025-01-01'\n    ) AS First_Date_of_Sale\n    \nFROM \n    `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` main\nLEFT JOIN \n    `variant-finance-data-project.Sticky_Data.Sticky_Dim_Product` dim\n    ON CONCAT(dim.Entity, dim.Product_Name_updated) = CONCAT(\n        main.Entity_Name,\n        REGEXP_EXTRACT(main.Product_Name_Final_Merged, r'^.{2}(\\d+)')\n    )\n    AND (dim.Currency = main.Currency OR TRIM(COALESCE(dim.Currency, '')) = '')\nLEFT JOIN\n    First_Sale_Dates fsd\n    ON main.Product_Name_Final_Merged = fsd.Product_Name_Final_Merged\nCROSS JOIN\n    config\nWHERE \n    main.Date_of_Sale >= config.start_date  -- Using start_date instead of interval\n    AND main.Product_Name_Final_Merged IS NOT NULL\n    AND main.Product_Name_Final_Merged != ''\n    AND RIGHT(main.Product_Name_Final_Merged, 2) != 'SS'\n    AND main.Billing_Cycle_Updated BETWEEN 0 AND 12\nGROUP BY \n    main.Product_Name_Final_Merged,\n    main.Entity_Name,\n    main.App_Name,\n    main.Trial_Type,\n    main.Trial_Period,\n    main.Currency,\n    -- Add the derived Country_Code to GROUP BY\n    CASE \n        WHEN main.App_Name = 'CT' THEN \n            CASE \n                WHEN main.Spend_Country_Code_AFID = 'JP' THEN 'JP'\n                ELSE 'Non-JP'\n            END\n        ELSE ''\n    END\nORDER BY \n    main.Product_Name_Final_Merged,\n    main.Entity_Name,\n    main.App_Name,\n    main.Currency,\n    Country_Code;\n"
+  },
+  "schedule": "every day 08:30",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 08:30"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-06-02T15:35:28.422544Z",
+  "user_id": "-7598719194024014828"
+}

@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Daedalus.CPA_By_Entity_MTD",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6a03a0c5-0000-2659-8a28-2405887f4580",
+  "next_run_time": "2026-08-06T08:20:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "CREATE OR REPLACE TABLE `variant-finance-data-project.Daedalus.CPA_By_Entity_MTD` AS\n\nWITH daily_aggregated AS (\n  -- First aggregate by Date and Entity (same as CPA_By_Entity)\n  SELECT \n    Date,\n    Entity,\n    -- Entity Name mapping\n    CASE Entity\n      WHEN 'AT' THEN 'ATH Digital LLC'\n      WHEN 'CT' THEN 'Character Types LLC'\n      WHEN 'FS' THEN 'Formsource LLC'\n      WHEN 'JF' THEN 'Job Flow LLC'\n      WHEN 'CN' THEN 'Contracts Dot Net LLC'\n      WHEN 'PD' THEN 'pdf Dot Net LLC'\n      WHEN 'VG' THEN 'Total'\n      ELSE Entity\n    END AS Entity_Name,\n    SUM(Daily_Spend) AS Daily_Spend,\n    SUM(Daily_Total_Users) AS Daily_Total_Users,\n    SUM(Daily_SS_Users) AS Daily_SS_Users,\n    SUM(Daily_New_Regular_Users) AS Daily_New_Regular_Users,\n    SUM(Daily_Subscriptions) AS Daily_Subscriptions\n  FROM `variant-finance-data-project.Daedalus.CAC_By_Entity`\n  GROUP BY Date, Entity\n)\n\nSELECT \n  Date,\n  Entity,\n  Entity_Name,\n  -- MTD cumulative sums (from month start to current date)\n  ROUND(SUM(Daily_Spend) OVER (\n    PARTITION BY Entity, DATE_TRUNC(Date, MONTH) \n    ORDER BY Date \n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ), 2) AS MTD_Spend,\n  CAST(SUM(Daily_Total_Users) OVER (\n    PARTITION BY Entity, DATE_TRUNC(Date, MONTH) \n    ORDER BY Date \n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ) AS INT64) AS MTD_Total_Users,\n  CAST(SUM(Daily_SS_Users) OVER (\n    PARTITION BY Entity, DATE_TRUNC(Date, MONTH) \n    ORDER BY Date \n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ) AS INT64) AS MTD_SS_Users,\n  CAST(SUM(Daily_New_Regular_Users) OVER (\n    PARTITION BY Entity, DATE_TRUNC(Date, MONTH) \n    ORDER BY Date \n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ) AS INT64) AS MTD_New_Regular_Users,\n  CAST(SUM(Daily_Subscriptions) OVER (\n    PARTITION BY Entity, DATE_TRUNC(Date, MONTH) \n    ORDER BY Date \n    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n  ) AS INT64) AS MTD_Subscriptions,\n  -- MTD CAC calculated from cumulative values\n  CASE \n    WHEN SUM(Daily_New_Regular_Users) OVER (\n      PARTITION BY Entity, DATE_TRUNC(Date, MONTH) \n      ORDER BY Date \n      ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n    ) = 0 THEN NULL\n    ELSE ROUND(\n      SUM(Daily_Spend) OVER (\n        PARTITION BY Entity, DATE_TRUNC(Date, MONTH) \n        ORDER BY Date \n        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n      ) / NULLIF(SUM(Daily_New_Regular_Users) OVER (\n        PARTITION BY Entity, DATE_TRUNC(Date, MONTH) \n        ORDER BY Date \n        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\n      ), 0), 2)\n  END AS MTD_CAC\nFROM daily_aggregated\nORDER BY Date, Entity;"
+  },
+  "schedule": "every day 08:20",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 08:20"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:17:11.724623Z",
+  "user_id": "-7598719194024014828"
+}

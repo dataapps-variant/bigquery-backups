@@ -1,0 +1,22 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Currency_Missing_PD1000AE_Hourly",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6a3f6133-0000-24ad-8e79-582429aea8fc",
+  "next_run_time": "2026-08-05T10:32:00Z",
+  "params": {
+    "query": "CREATE OR REPLACE TABLE `variant-finance-data-project.Verifications.Currency_Missing_PD1000AE` AS\r\n\r\nSELECT \r\n    CURRENT_TIMESTAMP() AS validation_run_timestamp,\r\n    'Sticky_Dim_Offer & Sticky_Dim_Product' AS missing_in_table,\r\n    'Currency' AS field_name_in_missing_table,\r\n    'Sticky_data_API_original_V_Merged_TBL' AS available_in_table,\r\n    'Currency' AS field_name_in_available_table,\r\n    CONCAT(b.Product_Name_Final_Merged, ' | ', b.Currency) AS missing_value\r\nFROM (\r\n    SELECT DISTINCT CAST(Product_Name_Final_Merged AS STRING) AS Product_Name_Final_Merged, \r\n                    CAST(Currency AS STRING) AS Currency\r\n    FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\r\n    WHERE Currency IS NOT NULL\r\n      AND Product_Name_Final_Merged LIKE 'PD%'\r\n      AND Currency != 'USD'\r\n) b\r\nLEFT JOIN (\r\n    SELECT DISTINCT CAST(Currency AS STRING) AS Currency\r\n    FROM `variant-finance-data-project.Sticky_Data.Sticky_Dim_Offer`\r\n) o ON b.Currency = o.Currency\r\nLEFT JOIN (\r\n    SELECT DISTINCT CAST(Currency AS STRING) AS Currency\r\n    FROM `variant-finance-data-project.Sticky_Data.Sticky_Dim_Product`\r\n) p ON b.Currency = p.Currency\r\nWHERE o.Currency IS NULL OR p.Currency IS NULL\r\nORDER BY b.Product_Name_Final_Merged, b.Currency;"
+  },
+  "schedule": "every 1 hours",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every 1 hours"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-06-16T09:33:06.227693Z",
+  "user_id": "-7598719194024014828"
+}

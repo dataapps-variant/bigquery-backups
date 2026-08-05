@@ -26,30 +26,47 @@ data and writes local backup files / GitHub commits.
    queries are read via the Dataform API — BigQuery Studio stores each saved
    query as its own single-file Dataform "repository" behind the scenes,
    which is why a separate Google service is involved here.
-2. **Write** — every object lands in one folder per **entity** (dataset name,
-   or the dataset-like prefix in a saved/scheduled query's name), mirroring
-   how the BigQuery Studio "Queries" panel groups results when you search by
-   that prefix. There's no separate views/routines/saved_queries split:
+2. **Write** — each run creates a new **dated snapshot folder**,
+   `backups/YYYY-MM-DD/`, rather than overwriting one folder in place. Only
+   the most recent `SNAPSHOT_RETENTION_COUNT` snapshots (default 3) are
+   kept — older ones are deleted automatically, so the repo doesn't grow
+   forever. Comparing two snapshot folders shows exactly what was added,
+   removed, or changed between runs.
+
+   Within a snapshot, every object lands in one folder per **entity**
+   (dataset name, or the dataset-like prefix in a saved/scheduled query's
+   name), mirroring how the BigQuery Studio "Queries" panel groups results
+   when you search by that prefix. There's no separate
+   views/routines/saved_queries split:
    ```
    backups/
-     Sticky_Data/
-       LMC_New_Users.sql        (a saved query named "Sticky_Data.LMC_New_Users")
-       Some_View.sql            (a view that actually lives in the Sticky_Data dataset)
-       Some_Procedure.sql       (a routine that actually lives in the Sticky_Data dataset)
-     Ad_spend_data/
-       Merged_Spend_View.sql
+     2026-08-04/
+       Sticky_Data/
+         LMC_New_Users.sql        (a saved query named "Sticky_Data.LMC_New_Users")
+         Some_View.sql            (a view that actually lives in the Sticky_Data dataset)
+         Some_Procedure.sql       (a routine that actually lives in the Sticky_Data dataset)
+       Ad_spend_data/
+         Merged_Spend_View.sql
+         ...
+       A_Query_With_No_Dot_In_Its_Name.sql   (saved queries with no dataset-like
+                                               prefix land at the top level)
+     2026-07-20/
        ...
-     A_Query_With_No_Dot_In_Its_Name.sql   (saved queries with no dataset-like
-                                             prefix land at the top level)
+     2026-07-05/
+       ...
    ```
-   If two different objects would land on the exact same filename (e.g. a
-   routine and a saved query both named `Refund_Table` in the same folder),
-   the newer one is suffixed with its type (`Refund_Table__view.sql`) so
-   nothing gets silently overwritten — resolved the same way on every run,
-   not based on fetch order.
-3. **Sync deletions** — any file under `backups/` that no longer corresponds
-   to a live BigQuery object (dropped view, deleted routine, or removed
-   scheduled/saved query) is deleted, and now-empty folders are pruned.
+   If two different objects would land on the exact same filename within a
+   snapshot (e.g. a routine and a saved query both named `Refund_Table` in
+   the same folder), the newer one is suffixed with its type
+   (`Refund_Table__view.sql`) so nothing gets silently overwritten —
+   resolved the same way on every run, not based on fetch order.
+3. **Sync deletions within the snapshot** — any file under that run's
+   snapshot folder that no longer corresponds to a live BigQuery object is
+   removed before the snapshot is finalized, and now-empty folders are
+   pruned. Separately, entire old *snapshots* beyond the retention count are
+   deleted (see above) — that's how a query's removal from BigQuery shows up
+   over time, by simply being absent from newer snapshots while still
+   visible in older ones (until those age out too).
 4. **Commit & push** — stages all changes, commits with a timestamped
    message, and pushes to the configured GitHub remote/branch. If nothing
    new was created, it still pushes any earlier commit that hadn't made it
@@ -103,12 +120,13 @@ python main.py
 ## Automating it
 
 A ready-to-use GitHub Actions workflow is included at
-[.github/workflows/backup.yml](.github/workflows/backup.yml). It runs daily
-(cron) and can also be triggered manually. Configure these in the repo
-settings:
+[.github/workflows/backup.yml](.github/workflows/backup.yml). It runs on the
+1st and 16th of each month — the closest a calendar-based cron schedule can
+get to "every 15 days" — and can also be triggered manually anytime from the
+Actions tab. Configure these in the repo settings:
 
 - **Secrets**: `GCP_SERVICE_ACCOUNT_KEY` (JSON key contents), `GCP_PROJECT_ID`
-- **Variables** (optional): `BQ_DATASETS`, `BQ_LOCATIONS`, `SAVED_QUERIES_LOCATIONS`
+- **Variables** (optional): `BQ_DATASETS`, `BQ_LOCATIONS`, `SAVED_QUERIES_LOCATIONS`, `SNAPSHOT_RETENTION_COUNT`
 
 `GITHUB_TOKEN` is provided automatically by Actions — no extra secret needed
 for the push step.
@@ -121,3 +139,5 @@ for the push step.
 - `BQ_LOCATIONS` controls which regions are checked for scheduled queries
   (transfer configs are region-scoped); defaults to `US`.
 - `SAVED_QUERIES_ENABLED=false` turns off saved-query backup entirely.
+- `SNAPSHOT_RETENTION_COUNT` controls how many dated snapshots to keep
+  (default 3). Raise it to keep more history, at the cost of a larger repo.

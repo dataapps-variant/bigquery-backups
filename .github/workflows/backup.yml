@@ -2,8 +2,13 @@ name: BigQuery Backup
 
 on:
   schedule:
-    # Runs every day at 06:00 UTC — adjust to taste.
-    - cron: "0 6 * * *"
+    # Runs on the 1st and 16th of each month at 06:00 UTC — the closest
+    # practical approximation of "every 15 days" that a calendar-based cron
+    # schedule can express (a true rolling 15-day interval from the last
+    # run would need extra state-tracking infrastructure). Each run creates
+    # its own dated snapshot folder (backups/YYYY-MM-DD/), so this captures
+    # anything added, removed, or changed since the previous snapshot.
+    - cron: "0 6 1,16 * *"
   workflow_dispatch: {}
 
 permissions:
@@ -35,6 +40,7 @@ jobs:
           BQ_DATASETS: ${{ vars.BQ_DATASETS }}
           BQ_LOCATIONS: ${{ vars.BQ_LOCATIONS }}
           SAVED_QUERIES_LOCATIONS: ${{ vars.SAVED_QUERIES_LOCATIONS }}
+          SNAPSHOT_RETENTION_COUNT: ${{ vars.SNAPSHOT_RETENTION_COUNT }}
           GIT_PUSH_ENABLED: "true"
           GIT_REMOTE_URL: https://github.com/${{ github.repository }}.git
           GIT_BRANCH: ${{ github.ref_name }}

@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "ICARUS_Multi.Active_Plans_6M",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/69d6f0d0-0000-22f1-b0fb-34c7e91a23cb",
+  "next_run_time": "2026-08-06T08:30:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "\nCREATE OR REPLACE TABLE `ICARUS_Multi.Active_Plans_6M` AS\nSELECT \n    App_Name,\n    Product_Name_Final_Merged AS Product_Name_Final,\n    MIN(Date) AS Start_Date,\n    MAX(Date) AS End_Date,\n    SUM(allocated_spend) AS Spend\nFROM \n    `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL`\nWHERE \n    Date BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 6 MONTH) AND CURRENT_DATE()\n    AND App_Name IS NOT NULL\n    AND Product_Name_Final_Merged IS NOT NULL\nGROUP BY \n    App_Name,\n    Product_Name_Final_Merged\nHAVING \n    SUM(allocated_spend) > 100\nORDER BY \n    Spend DESC;\n"
+  },
+  "schedule": "every day 08:30",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 08:30"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-06-02T15:39:57.923704Z",
+  "user_id": "-7598719194024014828"
+}

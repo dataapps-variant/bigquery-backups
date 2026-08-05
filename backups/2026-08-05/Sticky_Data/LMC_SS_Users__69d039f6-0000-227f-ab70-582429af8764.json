@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Sticky_Data.LMC_SS_Users",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/69d039f6-0000-227f-ab70-582429af8764",
+  "next_run_time": "2026-08-06T09:00:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "-- ============================================================\n-- LMC SS Users Pivot Table Script\n-- Creates SS BC0 users report with dynamic month columns\n-- ============================================================\n\nDECLARE min_month DATE;\nDECLARE max_month DATE;\nDECLARE pivot_months STRING;\nDECLARE sql_query STRING;\n\n-- ============================================================\n-- DATA CUTOFF CONFIGURATION\n-- Set to NULL for auto (last day of previous month)\n-- Or set a specific date like DATE '2025-06-30'\n-- ============================================================\nDECLARE data_cutoff_input DATE DEFAULT NULL;\nDECLARE data_cutoff DATE;\n\nSET data_cutoff = IFNULL(\n  data_cutoff_input,\n  DATE_SUB(DATE_TRUNC(CURRENT_DATE(), MONTH), INTERVAL 1 DAY)\n);\n\n-- ============================================================\n-- Step 1: Determine date range for pivot columns\n-- ============================================================\n\nSET min_month = DATE '2023-01-01';\nSET max_month = DATE_TRUNC(data_cutoff, MONTH);\n\n-- ============================================================\n-- Step 2: Generate dynamic pivot month list\n-- ============================================================\n\nSET pivot_months = (\n  SELECT STRING_AGG(\n    CONCAT(\"'\", FORMAT_DATE('%-m-%-d-%Y', month_date), \"'\"),\n    ', ' ORDER BY month_date\n  )\n  FROM UNNEST(GENERATE_DATE_ARRAY(min_month, max_month, INTERVAL 1 MONTH)) AS month_date\n);\n\n-- ============================================================\n-- Step 3: Build and execute the dynamic SQL\n-- ============================================================\n\nSET sql_query = CONCAT(\n'''CREATE OR REPLACE TABLE `variant-finance-data-project.Sticky_Data.LMC_SS_Users` AS\nWITH \nSS_BC0 AS (\n  SELECT \n    CONCAT(\n  SUBSTR(Product_Name_Final, 1, 2),\n  LPAD(SUBSTR(Product_Name_Final, 3, LENGTH(Product_Name_Final) - 4), 4, '0'),\n  RIGHT(Product_Name_Final, 2)\n) AS Product_Name_Final,\n    FORMAT_DATE('%-m-%-d-%Y', DATE_TRUNC(Date_of_Sale, MONTH)) AS month,\n    COUNT(DISTINCT Updated_Cust_ID) AS ss_bc0_users\n  FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\n  WHERE RIGHT(Product_Name_Final, 2) = 'SS'\n    AND Billing_Cycle_Updated = 0\n    AND Date_of_Sale >= '2023-01-01'\n    AND Date_of_Sale <= DATE \"''', CAST(data_cutoff AS STRING), '''\"\n    \n  GROUP BY \n  CONCAT(\n    SUBSTR(Product_Name_Final, 1, 2),\n    LPAD(SUBSTR(Product_Name_Final, 3, LENGTH(Product_Name_Final) - 4), 4, '0'),\n    RIGHT(Product_Name_Final, 2)\n  ),\n  month\n)\n\nSELECT * FROM SS_BC0\nPIVOT (\n  MAX(ss_bc0_users) \n  FOR month IN (''', pivot_months, ''')\n)\nORDER BY Product_Name_Final'''\n);\n\n-- Execute the dynamic query\nEXECUTE IMMEDIATE sql_query;"
+  },
+  "schedule": "every day 09:00",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 09:00"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:14:57.530568Z",
+  "user_id": "-7598719194024014828"
+}

@@ -1,0 +1,22 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Icarus_Spend_Country_AFID.SCA_Country_List",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6a6f6543-0000-214f-b515-14c14ee86440",
+  "next_run_time": "2026-08-06T08:15:00Z",
+  "params": {
+    "query": "\nCREATE OR REPLACE TABLE `variant-finance-data-project.Icarus_Spend_Country_AFID.SCA_Country_List` AS\n\nSELECT\n  CASE\n    WHEN App_Name = 'CT' AND Spend_Country_Code_AFID = 'JP' THEN 'CT-JP'\n    WHEN App_Name = 'CT' AND Spend_Country_Code_AFID != 'JP' THEN 'CT-Non-JP'\n    ELSE App_Name\n  END AS App_Name,\n  Spend_Country_Code_AFID,\n  COUNT(DISTINCT Updated_Cust_ID) AS Last_30D_Users,\n  CASE \n    WHEN COUNT(DISTINCT Updated_Cust_ID) > 50 THEN 'Yes' \n    ELSE 'No' \n  END AS Last_30D_Over_50\nFROM\n  `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\nWHERE\n  Date_of_Sale >= DATE_SUB(CURRENT_DATE(), INTERVAL 30 DAY)\n  AND Date_of_Sale < CURRENT_DATE()\n  AND Spend_Country_Code_AFID IS NOT NULL\n  AND (\n    (RIGHT(Product_Name_Final, 2) = 'NT' AND Billing_Cycle_Updated = 1)\n    OR\n    (RIGHT(Product_Name_Final, 2) != 'NT' AND Billing_Cycle_Updated = 0)\n  )\nGROUP BY\n  App_Name, Spend_Country_Code_AFID\nORDER BY App_Name, Spend_Country_Code_AFID;\n"
+  },
+  "schedule": "every day 08:15",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 08:15"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-07-30T10:28:04.529973Z",
+  "user_id": "-7598719194024014828"
+}

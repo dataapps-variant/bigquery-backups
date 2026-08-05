@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Discounts_BQ_90days",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/69c21d79-0000-2e01-bbaf-14223bc427e2",
+  "next_run_time": "2026-08-06T08:00:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "CREATE OR REPLACE TABLE `variant-finance-data-project.Utilities.Discounts_BQ_90days` AS\nSELECT\n  App_Name,\n  Product_Name_Final_Merged,\n  SUM(Plan_Price_Net_of_Tax_USD) AS Plan_Price_Net_of_Tax_USD,\n  SUM(Order_Price_Net_of_Tax_USD) AS Order_Price_Net_of_Tax_USD\nFROM\n  `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\nWHERE\n  Date_of_Sale >= DATE_SUB(CURRENT_DATE(), INTERVAL 90 DAY)\nGROUP BY\n  App_Name,\n  Product_Name_Final_Merged\nORDER BY\n  App_Name,\n  Product_Name_Final_Merged"
+  },
+  "schedule": "every day 08:00",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 08:00"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:13:49.326556Z",
+  "user_id": "-7598719194024014828"
+}

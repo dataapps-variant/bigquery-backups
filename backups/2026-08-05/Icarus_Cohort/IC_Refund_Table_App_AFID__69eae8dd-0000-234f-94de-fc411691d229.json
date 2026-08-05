@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Icarus_Cohort.IC_Refund_Table_App_AFID",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/69eae8dd-0000-234f-94de-fc411691d229",
+  "next_run_time": "2026-08-06T09:00:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "\nCREATE OR REPLACE TABLE `variant-finance-data-project.Icarus_Cohort.IC_Refund_Table_App_AFID` AS\n\nSELECT\n  Report_date,\n  Entity_Name,\n  App_Name,\n  AFID_Suffix,\n  Billing_Cycle,\n  SUM(Cohort_final_users) AS Cohort_final_users,\n  SUM(Refund_Count) AS Refund_Users,\n  CASE\n  WHEN SUM(Refund_Count) < 30 THEN 0.0\n  ELSE COALESCE(SAFE_DIVIDE(SUM(Refund_Count), SUM(Cohort_final_users)), 0.0)\nEND AS Refund_Ratio\nFROM `variant-finance-data-project.Icarus_Cohort.IC_Refund_Table_AFID`\nGROUP BY Report_date, Entity_Name, App_Name, AFID_Suffix, Billing_Cycle\nORDER BY Report_date DESC, App_Name, AFID_Suffix, Billing_Cycle;\n"
+  },
+  "schedule": "every day 09:00",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 09:00"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-07-09T14:36:21.422842Z",
+  "user_id": "-7598719194024014828"
+}

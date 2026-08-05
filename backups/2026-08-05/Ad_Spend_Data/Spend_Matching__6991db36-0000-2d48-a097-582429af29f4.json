@@ -1,0 +1,23 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Ad_spend_data.Spend_Matching",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6991db36-0000-2d48-a097-582429af29f4",
+  "next_run_time": "2026-08-10T09:00:00Z",
+  "notification_pubsub_topic": "projects/variant-finance-data-project/topics/bq-scheduled-query-notifications",
+  "params": {
+    "query": "-- Spend Summary Table\n-- Aggregates spend data by App_Name and Channel_Name\n-- Starting from January 1, 2025 up to the day before the script runs\n-- Scheduled to run every Monday at 8:30 UTC\n-- Notes: \n--   1. CT-JP and CT-Non-JP are combined into a single 'CT' entity\n--   2. For Facebook_Ads channel, EN spend is combined into CT\n\nCREATE OR REPLACE TABLE `variant-finance-data-project.Ad_spend_data.Monthly_Spend_Summary` AS\nSELECT \n    CASE \n        WHEN App_Name IN ('CT-JP', 'CT-Non-JP') THEN 'CT'\n        WHEN Channel_name = 'Facebook_Ads' AND App_Name = 'EN' THEN 'CT'\n        ELSE App_Name\n    END AS App_Name,\n    Channel_name AS Channel_Name,\n    SUM(Amount) AS Total_Amount\nFROM \n    `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL`\nWHERE \n    Date >= '2025-01-01'\n    AND Date <= DATE_SUB(CURRENT_DATE(), INTERVAL 1 DAY)  -- Up to yesterday\nGROUP BY \n    App_Name,\n    Channel_Name\nORDER BY \n    App_Name,\n    Channel_Name;"
+  },
+  "schedule": "every mon 09:00",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every mon 09:00"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-04-10T10:09:34.124297Z",
+  "user_id": "-7598719194024014828"
+}
