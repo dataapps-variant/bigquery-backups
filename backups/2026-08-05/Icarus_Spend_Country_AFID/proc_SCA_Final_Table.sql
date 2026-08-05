@@ -159,7 +159,7 @@ daily_spend_calc AS (
   ) was
   LEFT JOIN `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL` ads
     ON ads.App_Name = was.App_Name
-    AND ads.Product_Name_final = was.Product_Name_Final
+    AND ads.Product_Name_Final_Merged = was.Product_Name_Final
     AND ads.Country = was.Spend_Country_Code_AFID
     AND ads.Date = was.Report_date
   GROUP BY was.Report_date, was.App_Name, was.Product_Name_Final, was.Spend_Country_Code_AFID
@@ -178,7 +178,7 @@ daily_users_calc AS (
   ) was
   LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` base
     ON LEFT(base.App_Name, 2) = LEFT(was.App_Name, 2)
-    AND base.Product_name_Final = was.Product_Name_Final
+   AND base.Product_Name_Final_Merged = was.Product_Name_Final
     AND base.Spend_Country_Code_AFID = was.Spend_Country_Code_AFID
     AND base.Date_of_Sale = was.Report_date
     AND base.Trial_Type IS NOT NULL
@@ -206,7 +206,7 @@ t7d_daily_ss_users_calc AS (
       ON LEFT(base.App_Name, 2) = LEFT(was.App_Name, 2)
       AND base.Spend_Country_Code_AFID = was.Spend_Country_Code_AFID
       AND base.Date_of_Sale = day_date
-      AND RIGHT(base.Product_name_Final, 2) = 'SS'
+AND RIGHT(base.Product_Name_Final_Merged, 2) = 'SS'
       AND base.Billing_Cycle_Updated = 0
     GROUP BY was.Report_date, was.App_Name, was.Spend_Country_Code_AFID, day_date
   )
@@ -227,7 +227,7 @@ t7d_new_users_calc AS (
     CROSS JOIN UNNEST(GENERATE_DATE_ARRAY(DATE_SUB(was.Report_date, INTERVAL 6 DAY), was.Report_date)) AS day_date
     LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` base
       ON LEFT(base.App_Name, 2) = LEFT(was.App_Name, 2)
-      AND base.Product_name_Final = was.Product_Name_Final
+      AND base.Product_Name_Final_Merged = was.Product_Name_Final
       AND base.Spend_Country_Code_AFID = was.Spend_Country_Code_AFID
       AND base.Date_of_Sale = day_date
       AND base.Trial_Type IS NOT NULL

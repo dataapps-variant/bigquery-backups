@@ -1,45 +1,28 @@
-CREATE PROCEDURE `variant-finance-data-project`.ICARUS_Multi.proc_7K_30D_Main_Table_App_Level()
+CREATE PROCEDURE `variant-finance-data-project`.ICARUS_Multi.proc_7K_30D_Main_Table_App_level()
 BEGIN
-
--- =====================================================
--- 7K MAIN TABLE - APP LEVEL AGGREGATION
--- 
--- APPROACH:
--- 1. Aggregate base metrics from product-level Main Table
--- 2. Recent_Spend/Users from source tables (VPU pattern)
--- 3. T30D_New_Users from source tables (distinct users)
--- 4. Retention cascade with Rebill_users < 25 threshold
--- 5. NULL cascade on all downstream metrics
--- 6. Refund_ratio: Weighted average by Rebill_value
--- 7. Only Discounted ARPU/LTV metrics
---
--- KEY DIFFERENCES FROM CB APP:
--- - No SOT_Ratio / CB_User / CB_Value
--- - Churn uses Rebill_users (not CB_User)
--- - ARPU uses Rebill_value/Rebill_users (not CB_Value/CB_User)
--- - Rebill_users < 25 threshold KEPT (unlike CB App)
--- - No Spend_amount in output
---
--- OUTPUT: 23 columns
--- GRAIN: Report_date x App_Name x Country_Code x Billing_Cycle
--- =====================================================
 
 CREATE OR REPLACE TABLE `variant-finance-data-project.ICARUS_Multi.7K_30D_Main_Table_App_level` AS
 
 WITH
--- =====================================================
--- CONFIGURATION
--- =====================================================
 config AS (
   SELECT 
     7 AS recent_cac_days,
     25 AS minimum_rebill_users
 ),
 
+active_vg_apps AS (
+  SELECT App_Name
+  FROM `variant-finance-data-project.ICARUS_Multi.Dim_Active_VG_Apps`
+),
+
+active_vg_prefixes AS (
+  SELECT DISTINCT LEFT(App_Name, 2) AS App_Prefix
+  FROM `variant-finance-data-project.ICARUS_Multi.Dim_Active_VG_Apps`
+),
+
 -- =====================================================
 -- CTE 1: AGGREGATE BASE METRICS FROM PRODUCT-LEVEL TABLE
--- SUM all additive base metrics
--- Weighted avg components for Refund_ratio (by Rebill_value)
+-- VG CHANGE: Filtered to 7 active apps only
 -- =====================================================
 app_base_aggregated AS (
   SELECT 
@@ -48,26 +31,39 @@ app_base_aggregated AS (
     Country_Code,
     Billing_Cycle,
     
-    -- Additive base metrics
+    SUM(Subscription_users) AS Subscription_users,
+    SUM(Subscription_value) AS Subscription_value,
+    SUM(Rebill_users) AS Rebill_users,
+    SUM(Rebill_value) AS Rebill_value,
+    SUM(SS_Users) AS SS_Users,
+SUM(Single_Sale_Value) AS Single_Sale_Value,
+    SUM(Day_0_Users) AS Day_0_Users
+    
+  FROM `variant-finance-data-project.ICARUS_Multi.7K_30D_Main_Table`
+  GROUP BY Report_date, App_Name, Country_Code, Billing_Cycle
+
+  UNION ALL
+
+  -- VG: Now filtered to only active apps
+  SELECT 
+    Report_date,
+    'VG' AS App_Name,
+    '' AS Country_Code,
+    Billing_Cycle,
+    
     SUM(Subscription_users) AS Subscription_users,
     SUM(Subscription_value) AS Subscription_value,
     SUM(Rebill_users) AS Rebill_users,
     SUM(Rebill_value) AS Rebill_value,
     SUM(SS_Users) AS SS_Users,
     SUM(Single_Sale_Value) AS Single_Sale_Value,
-    
-    -- Refund weighted average components (by Rebill_value)
-    SUM(COALESCE(Refund_ratio, 0) * Rebill_value) AS weighted_refund_numerator,
-    SUM(Rebill_value) AS weighted_refund_denominator
+    SUM(Day_0_Users) AS Day_0_Users
     
   FROM `variant-finance-data-project.ICARUS_Multi.7K_30D_Main_Table`
-  GROUP BY Report_date, App_Name, Country_Code, Billing_Cycle
+  WHERE App_Name IN (SELECT App_Name FROM active_vg_apps)
+  GROUP BY Report_date, Billing_Cycle
 ),
 
--- =====================================================
--- CTE 2: LAST SPEND DATE PER APP + COUNTRY (BC0 only)
--- Find the most recent date with actual ad spend
--- =====================================================
 last_spend_dates AS (
   SELECT 
     aba.Report_date,
@@ -78,6 +74,7 @@ last_spend_dates AS (
     SELECT DISTINCT Report_date, App_Name, Country_Code
     FROM app_base_aggregated
     WHERE Billing_Cycle = 0
+      AND App_Name != 'VG'
   ) aba
   LEFT JOIN `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL` ads
     ON aba.App_Name = ads.App_Name
@@ -91,9 +88,6 @@ last_spend_dates AS (
   GROUP BY aba.Report_date, aba.App_Name, aba.Country_Code
 ),
 
--- =====================================================
--- CTE 3: SPEND DATE WINDOWS (7-day window)
--- =====================================================
 spend_date_windows AS (
   SELECT 
     Report_date,
@@ -109,10 +103,6 @@ spend_date_windows AS (
   FROM last_spend_dates
 ),
 
--- =====================================================
--- CTE 4: RECENT SPEND (from source table)
--- Sum ad spend within 7-day window per App + Country
--- =====================================================
 recent_spend_calc AS (
   SELECT 
     sdw.Report_date,
@@ -140,12 +130,6 @@ recent_spend_calc AS (
   GROUP BY sdw.Report_date, sdw.App_Name, sdw.Country_Code, sdw.window_start_date
 ),
 
--- =====================================================
--- CTE 5: RECENT USERS (from source table)
--- COUNT DISTINCT users within 7-day window
--- Uses LEFT(App_Name, 2) prefix match (VPU pattern)
--- VPU CT-JP / CT-Non-JP / non-CT country logic
--- =====================================================
 recent_users_calc AS (
   SELECT 
     sdw.Report_date,
@@ -184,11 +168,6 @@ recent_users_calc AS (
   GROUP BY sdw.Report_date, sdw.App_Name, sdw.Country_Code, sdw.window_start_date
 ),
 
--- =====================================================
--- CTE 6: T30D NEW USERS (from source table)
--- COUNT DISTINCT users in 30-day window
--- Same join and country logic as Recent_Users
--- =====================================================
 t30d_new_users_calc AS (
   SELECT 
     aba.Report_date,
@@ -198,6 +177,7 @@ t30d_new_users_calc AS (
   FROM (
     SELECT DISTINCT Report_date, App_Name, Country_Code
     FROM app_base_aggregated
+    WHERE App_Name != 'VG'
   ) aba
   LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` base
     ON LEFT(base.App_Name, 2) = LEFT(aba.App_Name, 2)
@@ -226,6 +206,125 @@ t30d_new_users_calc AS (
   GROUP BY aba.Report_date, aba.App_Name, aba.Country_Code
 ),
 
+-- VG CHANGE: Filtered to 7 active apps only
+vg_last_spend_dates AS (
+  SELECT 
+    aba.Report_date,
+    MAX(ads.Date) AS last_spend_date
+  FROM (
+    SELECT DISTINCT Report_date
+    FROM app_base_aggregated
+    WHERE App_Name = 'VG' AND Billing_Cycle = 0
+  ) aba
+LEFT JOIN `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL` ads
+    ON ads.Date <= aba.Report_date
+    AND ads.allocated_spend > 0
+  INNER JOIN active_vg_apps ava
+    ON ads.App_Name = ava.App_Name
+  GROUP BY aba.Report_date
+),
+
+vg_spend_date_windows AS (
+  SELECT 
+    Report_date,
+    last_spend_date,
+    CASE 
+      WHEN last_spend_date IS NOT NULL 
+      THEN DATE_SUB(last_spend_date, INTERVAL (SELECT recent_cac_days FROM config) - 1 DAY)
+      ELSE NULL
+    END AS window_start_date,
+    last_spend_date AS window_end_date
+  FROM vg_last_spend_dates
+),
+
+-- VG CHANGE: Filtered to 7 active apps only
+vg_recent_spend_calc AS (
+  SELECT 
+    sdw.Report_date,
+    CASE 
+      WHEN sdw.window_start_date IS NOT NULL THEN
+        COALESCE(SUM(ads.allocated_spend), 0)
+      ELSE 0
+    END AS Recent_Spend
+  FROM vg_spend_date_windows sdw
+  LEFT JOIN `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL` ads
+    ON ads.Date BETWEEN sdw.window_start_date AND sdw.window_end_date
+    AND ads.allocated_spend > 0
+  INNER JOIN active_vg_apps ava
+    ON ads.App_Name = ava.App_Name
+  GROUP BY sdw.Report_date, sdw.window_start_date
+),
+
+-- VG CHANGE: Filtered to 7 active apps (2-letter prefix)
+vg_recent_users_calc AS (
+  SELECT 
+    sdw.Report_date,
+    CASE 
+      WHEN sdw.window_start_date IS NOT NULL THEN
+        COUNT(DISTINCT base.Updated_Cust_ID)
+      ELSE 0
+    END AS Recent_Users
+  FROM vg_spend_date_windows sdw
+  LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` base
+    ON base.Date_of_Sale BETWEEN sdw.window_start_date AND sdw.window_end_date
+    AND base.Trial_Type IS NOT NULL
+    AND base.Trial_Type != 'SS'
+  AND (
+      (base.Trial_Type = 'NT' AND base.Billing_Cycle_Updated = 1)
+      OR (base.Trial_Type != 'NT' AND base.Billing_Cycle_Updated = 0)
+    )
+  INNER JOIN active_vg_prefixes avp
+    ON LEFT(base.App_Name, 2) = avp.App_Prefix
+  GROUP BY sdw.Report_date, sdw.window_start_date
+),
+
+-- VG CHANGE: Filtered to 7 active apps (2-letter prefix)
+vg_t30d_new_users_calc AS (
+  SELECT 
+    aba.Report_date,
+    COUNT(DISTINCT base.Updated_Cust_ID) AS T30D_New_Users
+  FROM (
+    SELECT DISTINCT Report_date
+    FROM app_base_aggregated
+    WHERE App_Name = 'VG'
+  ) aba
+  LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` base
+    ON base.Date_of_Sale BETWEEN DATE_SUB(aba.Report_date, INTERVAL 29 DAY) AND aba.Report_date
+    AND base.Trial_Type IS NOT NULL
+    AND base.Trial_Type != 'SS'
+  AND (
+      (base.Trial_Type = 'NT' AND base.Billing_Cycle_Updated = 1)
+      OR (base.Trial_Type != 'NT' AND base.Billing_Cycle_Updated = 0)
+    )
+  INNER JOIN active_vg_prefixes avp
+    ON LEFT(base.App_Name, 2) = avp.App_Prefix
+  GROUP BY aba.Report_date
+),
+
+-- =====================================================
+-- VG REFUND RATIO FROM LOOKUP
+-- VG CHANGE: Filtered to 7 active apps only
+-- =====================================================
+vg_refund_from_lookup AS (
+  SELECT
+    aba.Report_date,
+    aba.Billing_Cycle,
+    COALESCE(
+      SAFE_DIVIDE(
+        SUM(COALESCE(rfl.Refund_Ratio, 0) * aba.Rebill_value),
+        SUM(aba.Rebill_value)
+      ),
+      0
+    ) AS Refund_ratio
+  FROM app_base_aggregated aba
+  LEFT JOIN `variant-finance-data-project.ICARUS_Multi.Refund_Table_App_Level` rfl
+    ON aba.Report_date = rfl.Report_date
+    AND aba.App_Name = rfl.App_Name
+      AND aba.Billing_Cycle = rfl.Billing_Cycle
+  WHERE aba.App_Name IN (SELECT App_Name FROM active_vg_apps)
+  GROUP BY aba.Report_date, aba.Billing_Cycle
+),
+
 -- =====================================================
 -- CTE 7: ASSEMBLE ALL BASE DATA + CHURN RATE
 -- =====================================================
@@ -236,38 +335,37 @@ with_churn AS (
     aba.Country_Code,
     aba.Billing_Cycle,
     
-    -- Base metrics (from product table aggregation)
     aba.Subscription_users,
     aba.Subscription_value,
     aba.Rebill_users,
     aba.Rebill_value,
     aba.SS_Users,
     aba.Single_Sale_Value,
+    aba.Day_0_Users,
     
-    -- Refund components
-    aba.weighted_refund_numerator,
-    aba.weighted_refund_denominator,
-    
-    -- Recent metrics (from source tables, BC0 only)
+    -- Recent metrics
     CASE 
+      WHEN aba.Billing_Cycle = 0 AND aba.App_Name = 'VG' THEN COALESCE(vg_rsc.Recent_Spend, 0)
       WHEN aba.Billing_Cycle = 0 THEN COALESCE(rsc.Recent_Spend, 0)
       ELSE 0
     END AS Recent_Spend,
     CASE 
+      WHEN aba.Billing_Cycle = 0 AND aba.App_Name = 'VG' THEN COALESCE(vg_ruc.Recent_Users, 0)
       WHEN aba.Billing_Cycle = 0 THEN COALESCE(ruc.Recent_Users, 0)
       ELSE 0
     END AS Recent_Users,
     
-    -- T30D New Users (from source table)
-    COALESCE(t30d.T30D_New_Users, 0) AS T30D_New_Users,
+    CASE 
+      WHEN aba.App_Name = 'VG' THEN COALESCE(vg_t30d.T30D_New_Users, 0)
+      ELSE COALESCE(t30d.T30D_New_Users, 0)
+    END AS T30D_New_Users,
     
-    -- Refund ratio (weighted avg by Rebill_value)
-    COALESCE(
-      SAFE_DIVIDE(aba.weighted_refund_numerator, NULLIF(aba.weighted_refund_denominator, 0)),
-      0
-    ) AS Refund_ratio,
+    CASE 
+      WHEN aba.App_Name = 'VG' THEN COALESCE(vg_rfl.Refund_ratio, 0)
+      ELSE COALESCE(rfl.Refund_Ratio, 0)
+    END AS Refund_ratio,
     
-    -- Churn rate: BC0 = 0.0, else = 1 - Rebill_users/Subscription_users
+    -- Churn rate
     CASE 
       WHEN aba.Billing_Cycle = 0 THEN 0.00
       ELSE 1 - COALESCE(SAFE_DIVIDE(aba.Rebill_users, NULLIF(aba.Subscription_users, 0)), 0)
@@ -279,28 +377,47 @@ with_churn AS (
     AND aba.App_Name = rsc.App_Name
     AND aba.Country_Code = rsc.Country_Code
     AND aba.Billing_Cycle = 0
+    AND aba.App_Name != 'VG'
   LEFT JOIN recent_users_calc ruc
     ON aba.Report_date = ruc.Report_date
     AND aba.App_Name = ruc.App_Name
     AND aba.Country_Code = ruc.Country_Code
     AND aba.Billing_Cycle = 0
+    AND aba.App_Name != 'VG'
   LEFT JOIN t30d_new_users_calc t30d
     ON aba.Report_date = t30d.Report_date
     AND aba.App_Name = t30d.App_Name
     AND aba.Country_Code = t30d.Country_Code
+    AND aba.App_Name != 'VG'
+  LEFT JOIN vg_recent_spend_calc vg_rsc
+    ON aba.Report_date = vg_rsc.Report_date
+    AND aba.App_Name = 'VG'
+    AND aba.Billing_Cycle = 0
+  LEFT JOIN vg_recent_users_calc vg_ruc
+    ON aba.Report_date = vg_ruc.Report_date
+    AND aba.App_Name = 'VG'
+    AND aba.Billing_Cycle = 0
+  LEFT JOIN vg_t30d_new_users_calc vg_t30d
+    ON aba.Report_date = vg_t30d.Report_date
+    AND aba.App_Name = 'VG'
+  LEFT JOIN `variant-finance-data-project.ICARUS_Multi.Refund_Table_App_Level` rfl
+    ON aba.Report_date = rfl.Report_date
+    AND aba.App_Name = rfl.App_Name
+    AND aba.Billing_Cycle = rfl.Billing_Cycle
+    AND aba.App_Name != 'VG'
+  LEFT JOIN vg_refund_from_lookup vg_rfl
+    ON aba.Report_date = vg_rfl.Report_date
+    AND aba.Billing_Cycle = vg_rfl.Billing_Cycle
+    AND aba.App_Name = 'VG'
 ),
 
 -- =====================================================
--- RETENTION CASCADE
--- BC0 = 1.0 (with threshold check)
--- Rebill_users < 25 at ANY BC -> NULL -> cascade forward
--- Partition by Report_date, App_Name, Country_Code
+-- RETENTION CASCADE (unchanged)
 -- =====================================================
 retention_step_0 AS (
   SELECT 
     wc.*,
     CASE 
-      WHEN wc.Billing_Cycle = 0 AND (wc.Subscription_users = 0 OR wc.Rebill_users < (SELECT minimum_rebill_users FROM config)) THEN NULL
       WHEN wc.Billing_Cycle = 0 THEN 1.0
       ELSE NULL
     END AS step_0_retention
@@ -571,48 +688,36 @@ retention_step_12 AS (
   FROM retention_step_11 rs11
 ),
 
--- =====================================================
--- ACTIVE/INACTIVE STATUS
--- Active if ANY product under this App exists in Active_Plans_6M
--- =====================================================
 active_apps AS (
   SELECT DISTINCT App_Name
   FROM `variant-finance-data-project.ICARUS_Multi.Active_Plans_6M`
 ),
 
--- =====================================================
--- FINAL CALCULATIONS
--- NULL cascade: ALL downstream metrics NULL when Retention IS NULL
--- =====================================================
 final_calculations AS (
   SELECT 
     rs12.*,
     
-    -- Active/Inactive
     CASE 
+      WHEN rs12.App_Name = 'VG' THEN 'Active'
       WHEN aa.App_Name IS NOT NULL THEN 'Active'
       ELSE 'Inactive'
     END AS Active_Inactive,
     
-    -- Churn_rate: NULL when Retention IS NULL
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE rs12.Churn_rate
     END AS final_Churn_rate,
     
-    -- Refund_ratio: NULL when Retention IS NULL
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE rs12.Refund_ratio
     END AS final_Refund_ratio,
     
-    -- NET Retention rate: NULL when Retention IS NULL
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE rs12.Retention_rate - rs12.Refund_ratio
     END AS NET_Retention_rate,
     
-    -- Recent CAC (BC0 only): NULL when Retention IS NULL
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE COALESCE(
@@ -625,8 +730,6 @@ final_calculations AS (
       )
     END AS Recent_CAC,
     
-    -- ARPU_Discounted: NULL when Retention IS NULL
-    -- = (Rebill_value/Rebill_users) x Retention + SS/Subscription_users
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE COALESCE(
@@ -638,8 +741,6 @@ final_calculations AS (
       )
     END AS ARPU_Discounted,
     
-    -- Net_ARPU_Discounted: NULL when Retention IS NULL
-    -- = (Rebill_value/Rebill_users) x (Retention - Refund) + SS/Subscription_users
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE COALESCE(
@@ -656,42 +757,34 @@ final_calculations AS (
     ON rs12.App_Name = aa.App_Name
 )
 
--- =====================================================
--- FINAL OUTPUT (23 COLUMNS)
--- =====================================================
 SELECT 
-  -- Dimensions (4)
   fc.Report_date,
   fc.App_Name,
   fc.Country_Code,
   fc.Billing_Cycle,
   
-  -- Status (1)
   fc.Active_Inactive,
   
-  -- Base Metrics - from product table SUM (6)
   fc.Subscription_users,
   fc.Subscription_value,
-  fc.Rebill_users,
+fc.Rebill_users,
+  fc.Day_0_Users,
+  SAFE_DIVIDE(fc.Day_0_Users, NULLIF(fc.Rebill_users, 0)) AS Actual_SOT,
   fc.Rebill_value,
   fc.SS_Users,
   fc.Single_Sale_Value,
   
-  -- Base Metrics - from source tables (3)
   fc.Recent_Spend,
   fc.Recent_Users,
   fc.T30D_New_Users,
   
-  -- Rates (4) - all NULL when Retention IS NULL
   fc.final_Churn_rate AS Churn_rate,
   fc.final_Refund_ratio AS Refund_ratio,
   fc.Retention_rate,
   fc.NET_Retention_rate,
   
-  -- CAC (1) - NULL when Retention IS NULL
   fc.Recent_CAC,
   
-  -- Revenue Metrics - Discounted only (3) - NULL when Retention IS NULL
   fc.ARPU_Discounted,
   fc.Net_ARPU_Discounted,
   CASE 
@@ -702,30 +795,4 @@ SELECT
 FROM final_calculations fc
 ORDER BY fc.Report_date DESC, fc.App_Name, fc.Country_Code, fc.Billing_Cycle;
 
--- =====================================================
--- SCRIPT COMPLETE - 7K MAIN TABLE APP LEVEL
--- Table: variant-finance-data-project.ICARUS_Multi.7K_30D_Main_Table_App_level
--- 
--- SOURCE TABLES:
--- 1. ICARUS_Multi.7K_30D_Main_Table (base metrics aggregation)
--- 2. Ad_spend_data.Merged_Spend_Split_TBL (Recent_Spend)
--- 3. Sticky_Data.Sticky_data_API_original_V_Merged_TBL (Recent_Users, T30D)
--- 4. ICARUS_Multi.Active_Plans_6M (Active/Inactive status)
---
--- KEY DESIGN DECISIONS:
--- Base metrics: SUM from product Main Table
--- No SOT/CB layer (Main Table uses Rebill directly)
--- Refund_ratio: Weighted avg by Rebill_value (NULL excluded)
--- Recent_Spend/Users: From source tables (VPU pattern)
--- T30D_New_Users: From source tables (distinct users)
--- Retention: Rebill_users < 25 threshold KEPT + NULL cascade
--- NULL cascade: ALL downstream metrics NULL when Retention IS NULL
--- Only Discounted ARPU/LTV metrics
--- Spend_amount: Removed from output
---
--- OUTPUT: 23 columns
--- CTEs: 21 (including 13 retention steps)
--- =====================================================
-
--- Add these 2 lines at bottom
-END;
+end;

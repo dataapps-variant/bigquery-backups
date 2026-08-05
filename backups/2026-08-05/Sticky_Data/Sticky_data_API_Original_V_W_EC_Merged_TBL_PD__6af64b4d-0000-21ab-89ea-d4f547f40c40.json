@@ -5,7 +5,7 @@
   "display_name": "Sticky_Data.Sticky_data_API_Original_V_W_EC_Merged_TBL_PD",
   "email_preferences": {},
   "name": "projects/1041741270489/locations/us/transferConfigs/6af64b4d-0000-21ab-89ea-d4f547f40c40",
-  "next_run_time": "2026-08-05T11:34:00Z",
+  "next_run_time": "2026-08-05T13:34:00Z",
   "params": {
     "query": "CREATE OR REPLACE TABLE `variant-finance-data-project.Sticky_Data.Sticky_data_API_Original_V_W_EC_Merged_TBL_PD` AS\nSELECT *\nFROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_Original_V_W_EC_Merged_TBL`\nwhere Entity_Name = \"PD\""
   },

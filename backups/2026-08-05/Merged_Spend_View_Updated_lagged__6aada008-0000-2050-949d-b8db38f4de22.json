@@ -5,7 +5,7 @@
   "display_name": "Merged_Spend_View_Updated_lagged",
   "email_preferences": {},
   "name": "projects/1041741270489/locations/us/transferConfigs/6aada008-0000-2050-949d-b8db38f4de22",
-  "next_run_time": "2026-08-05T11:40:00Z",
+  "next_run_time": "2026-08-05T13:40:00Z",
   "params": {
     "query": "CREATE OR REPLACE TABLE\r\n  `variant-finance-data-project.Ad_spend_data.Merged_Spend_View_Updated_lagged`\r\nAS\r\nSELECT\r\n  *\r\nFROM `variant-finance-data-project.Ad_spend_data.Merged_Spend_View_Updated`;"
   },

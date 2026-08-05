@@ -1,28 +1,20 @@
-CREATE PROCEDURE `variant-finance-data-project`.ICARUS_Multi.proc_7K_30D_Crystal_Ball_App_level()
+CREATE PROCEDURE `variant-finance-data-project`.ICARUS_Multi.proc_7K_30D_Crystal_Ball_App_Level()
 BEGIN
 
 CREATE OR REPLACE TABLE `variant-finance-data-project.ICARUS_Multi.7K_30D_Crystal_Ball_App_level` AS
 
 WITH
+-- =====================================================
+-- CONFIGURATION
+-- =====================================================
 config AS (
-  SELECT
-    7 AS recent_cac_days,
-    25 AS minimum_cb_users
-),
-
-active_vg_apps AS (
-  SELECT App_Name
-  FROM `variant-finance-data-project.ICARUS_Multi.Dim_Active_VG_Apps`
-),
-
-active_vg_prefixes AS (
-  SELECT DISTINCT LEFT(App_Name, 2) AS App_Prefix
-  FROM `variant-finance-data-project.ICARUS_Multi.Dim_Active_VG_Apps`
+  SELECT 7 AS recent_cac_days
 ),
 
 -- =====================================================
 -- CTE 1: AGGREGATE BASE METRICS FROM PRODUCT-LEVEL TABLE
--- VG CHANGE: Filtered to 7 active apps only
+-- SUM all additive base metrics
+-- Weighted avg components for Refund_ratio (by CB_Value)
 -- =====================================================
 app_base_aggregated AS (
   SELECT 
@@ -31,63 +23,98 @@ app_base_aggregated AS (
     Country_Code,
     Billing_Cycle,
     
+    -- Additive base metrics
     SUM(Subscription_users) AS Subscription_users,
     SUM(Subscription_value) AS Subscription_value,
-    SUM(CB_User) AS CB_User,
-    SUM(CB_Value) AS CB_Value,
+    SUM(Day_0_user) AS Day_0_user,
+    SUM(Day_0_values) AS Day_0_values,
     SUM(SS_Users) AS SS_Users,
     SUM(Single_Sale_Value) AS Single_Sale_Value,
-    SUM(Day_0_user) AS Day_0_user
+    
+    -- Refund weighted average components (exclude NULL Refund_ratio rows)
+    SUM(COALESCE(Refund_ratio, 0) * CB_Value) AS weighted_refund_numerator,
+    SUM(CB_Value) AS weighted_refund_denominator
     
   FROM `variant-finance-data-project.ICARUS_Multi.7K_30D_Crystal_Ball`
   GROUP BY Report_date, App_Name, Country_Code, Billing_Cycle
-
-  UNION ALL
-
-  -- VG: Now filtered to only active apps
-  SELECT 
-    Report_date,
-    'VG' AS App_Name,
-    '' AS Country_Code,
-    Billing_Cycle,
-    
-    SUM(Subscription_users) AS Subscription_users,
-    SUM(Subscription_value) AS Subscription_value,
-    SUM(CB_User) AS CB_User,
-    SUM(CB_Value) AS CB_Value,
-    SUM(SS_Users) AS SS_Users,
-SUM(Single_Sale_Value) AS Single_Sale_Value,
-    SUM(Day_0_user) AS Day_0_user
-    
-  FROM `variant-finance-data-project.ICARUS_Multi.7K_30D_Crystal_Ball`
-  WHERE App_Name IN (SELECT App_Name FROM active_vg_apps)
-  GROUP BY Report_date, Billing_Cycle
 ),
 
-last_spend_dates AS (
+-- =====================================================
+-- CTE 2: SOT RATIO LOOKUP (App-level table)
+-- =====================================================
+app_sot_lookup AS (
   SELECT 
     aba.Report_date,
     aba.App_Name,
     aba.Country_Code,
+    aba.Billing_Cycle,
+    COALESCE(sot.SOT_Ratio, 0) AS SOT_Ratio
+  FROM app_base_aggregated aba
+  LEFT JOIN `variant-finance-data-project.ICARUS_Multi.7k_SOT_Ratio_App` sot
+    ON aba.Report_date = sot.Report_date
+    AND aba.App_Name = sot.App_Name
+    AND aba.Country_Code = sot.Country_Code
+    AND aba.Billing_Cycle = sot.Billing_Cycle
+),
+
+-- =====================================================
+-- CTE 3: CB METRICS (Crystal Ball User & Value)
+-- =====================================================
+app_cb_metrics AS (
+  SELECT 
+    aba.*,
+    asl.SOT_Ratio,
+    
+    -- CB_User = Day_0_user / SOT_Ratio
+    COALESCE(
+      SAFE_DIVIDE(aba.Day_0_user, NULLIF(asl.SOT_Ratio, 0)),
+      0
+    ) AS CB_User,
+    
+    -- CB_Value = Day_0_values / SOT_Ratio
+    COALESCE(
+      SAFE_DIVIDE(aba.Day_0_values, NULLIF(asl.SOT_Ratio, 0)),
+      0
+    ) AS CB_Value
+    
+  FROM app_base_aggregated aba
+  INNER JOIN app_sot_lookup asl
+    ON aba.Report_date = asl.Report_date
+    AND aba.App_Name = asl.App_Name
+    AND aba.Country_Code = asl.Country_Code
+    AND aba.Billing_Cycle = asl.Billing_Cycle
+),
+
+-- =====================================================
+-- CTE 4: LAST SPEND DATE PER APP + COUNTRY (BC0 only)
+-- Find the most recent date with actual ad spend
+-- =====================================================
+last_spend_dates AS (
+  SELECT 
+    acm.Report_date,
+    acm.App_Name,
+    acm.Country_Code,
     MAX(ads.Date) AS last_spend_date
   FROM (
     SELECT DISTINCT Report_date, App_Name, Country_Code
-    FROM app_base_aggregated
+    FROM app_cb_metrics
     WHERE Billing_Cycle = 0
-      AND App_Name != 'VG'
-  ) aba
+  ) acm
   LEFT JOIN `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL` ads
-    ON aba.App_Name = ads.App_Name
-    AND ads.Date <= aba.Report_date
+    ON acm.App_Name = ads.App_Name
+    AND ads.Date <= acm.Report_date
     AND ads.allocated_spend > 0
     AND (
-      (aba.Country_Code = 'JP' AND ads.Country = 'JP')
-      OR (aba.Country_Code = 'Non-JP' AND (ads.Country != 'JP' OR ads.Country IS NULL))
-      OR (aba.Country_Code IS NULL OR aba.Country_Code = '')
+      (acm.Country_Code = 'JP' AND ads.Country = 'JP')
+      OR (acm.Country_Code = 'Non-JP' AND (ads.Country != 'JP' OR ads.Country IS NULL))
+      OR (acm.Country_Code IS NULL OR acm.Country_Code = '')
     )
-  GROUP BY aba.Report_date, aba.App_Name, aba.Country_Code
+  GROUP BY acm.Report_date, acm.App_Name, acm.Country_Code
 ),
 
+-- =====================================================
+-- CTE 5: SPEND DATE WINDOWS (7-day window)
+-- =====================================================
 spend_date_windows AS (
   SELECT 
     Report_date,
@@ -103,6 +130,10 @@ spend_date_windows AS (
   FROM last_spend_dates
 ),
 
+-- =====================================================
+-- CTE 6: RECENT SPEND (from source table)
+-- Sum ad spend within 7-day window per App + Country
+-- =====================================================
 recent_spend_calc AS (
   SELECT 
     sdw.Report_date,
@@ -130,6 +161,12 @@ recent_spend_calc AS (
   GROUP BY sdw.Report_date, sdw.App_Name, sdw.Country_Code, sdw.window_start_date
 ),
 
+-- =====================================================
+-- CTE 7: RECENT USERS (from source table)
+-- COUNT DISTINCT users within 7-day window
+-- Uses LEFT(App_Name, 2) prefix match (VPU pattern)
+-- VPU CT-JP / CT-Non-JP / non-CT country logic
+-- =====================================================
 recent_users_calc AS (
   SELECT 
     sdw.Report_date,
@@ -146,278 +183,162 @@ recent_users_calc AS (
     AND base.Date_of_Sale BETWEEN sdw.window_start_date AND sdw.window_end_date
     AND base.Trial_Type IS NOT NULL
     AND base.Trial_Type != 'SS'
+    -- Billing Cycle filter based on Trial_Type
     AND (
       (base.Trial_Type = 'NT' AND base.Billing_Cycle_Updated = 1)
       OR (base.Trial_Type != 'NT' AND base.Billing_Cycle_Updated = 0)
     )
+    -- Country logic (VPU CT-pattern)
     AND (
+      -- CT-JP: Only JP country codes
       (LEFT(sdw.App_Name, 2) = 'CT' AND sdw.App_Name NOT LIKE '%Non-JP%' 
         AND sdw.Country_Code = 'JP' AND base.Spend_Country_Code_AFID = 'JP')
       OR
+      -- CT-Non-JP: Only non-JP country codes
       (LEFT(sdw.App_Name, 2) = 'CT' AND sdw.App_Name LIKE '%Non-JP%' 
         AND sdw.Country_Code = 'Non-JP' AND base.Spend_Country_Code_AFID != 'JP')
       OR
+      -- Non-CT apps with JP
       (LEFT(sdw.App_Name, 2) != 'CT' AND sdw.Country_Code = 'JP' 
         AND base.Spend_Country_Code_AFID = 'JP')
       OR
+      -- Non-CT apps with Non-JP
       (LEFT(sdw.App_Name, 2) != 'CT' AND sdw.Country_Code = 'Non-JP' 
         AND (base.Spend_Country_Code_AFID != 'JP' OR base.Spend_Country_Code_AFID IS NULL))
       OR
+      -- No country split
       (sdw.Country_Code IS NULL OR sdw.Country_Code = '')
     )
   GROUP BY sdw.Report_date, sdw.App_Name, sdw.Country_Code, sdw.window_start_date
 ),
 
+-- =====================================================
+-- CTE 8: T30D NEW USERS (from source table)
+-- COUNT DISTINCT users in 30-day window
+-- Same join and country logic as Recent_Users
+-- =====================================================
 t30d_new_users_calc AS (
   SELECT 
-    aba.Report_date,
-    aba.App_Name,
-    aba.Country_Code,
+    acm.Report_date,
+    acm.App_Name,
+    acm.Country_Code,
     COUNT(DISTINCT base.Updated_Cust_ID) AS T30D_New_Users
   FROM (
     SELECT DISTINCT Report_date, App_Name, Country_Code
-    FROM app_base_aggregated
-    WHERE App_Name != 'VG'
-  ) aba
+    FROM app_cb_metrics
+  ) acm
   LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` base
-    ON LEFT(base.App_Name, 2) = LEFT(aba.App_Name, 2)
-    AND base.Date_of_Sale BETWEEN DATE_SUB(aba.Report_date, INTERVAL 29 DAY) AND aba.Report_date
+    ON LEFT(base.App_Name, 2) = LEFT(acm.App_Name, 2)
+    AND base.Date_of_Sale BETWEEN DATE_SUB(acm.Report_date, INTERVAL 29 DAY) AND acm.Report_date
     AND base.Trial_Type IS NOT NULL
     AND base.Trial_Type != 'SS'
+    -- Billing Cycle filter based on Trial_Type
     AND (
       (base.Trial_Type = 'NT' AND base.Billing_Cycle_Updated = 1)
       OR (base.Trial_Type != 'NT' AND base.Billing_Cycle_Updated = 0)
     )
+    -- Country logic (VPU CT-pattern)
     AND (
-      (LEFT(aba.App_Name, 2) = 'CT' AND aba.App_Name NOT LIKE '%Non-JP%' 
-        AND aba.Country_Code = 'JP' AND base.Spend_Country_Code_AFID = 'JP')
+      (LEFT(acm.App_Name, 2) = 'CT' AND acm.App_Name NOT LIKE '%Non-JP%' 
+        AND acm.Country_Code = 'JP' AND base.Spend_Country_Code_AFID = 'JP')
       OR
-      (LEFT(aba.App_Name, 2) = 'CT' AND aba.App_Name LIKE '%Non-JP%' 
-        AND aba.Country_Code = 'Non-JP' AND base.Spend_Country_Code_AFID != 'JP')
+      (LEFT(acm.App_Name, 2) = 'CT' AND acm.App_Name LIKE '%Non-JP%' 
+        AND acm.Country_Code = 'Non-JP' AND base.Spend_Country_Code_AFID != 'JP')
       OR
-      (LEFT(aba.App_Name, 2) != 'CT' AND aba.Country_Code = 'JP' 
+      (LEFT(acm.App_Name, 2) != 'CT' AND acm.Country_Code = 'JP' 
         AND base.Spend_Country_Code_AFID = 'JP')
       OR
-      (LEFT(aba.App_Name, 2) != 'CT' AND aba.Country_Code = 'Non-JP' 
+      (LEFT(acm.App_Name, 2) != 'CT' AND acm.Country_Code = 'Non-JP' 
         AND (base.Spend_Country_Code_AFID != 'JP' OR base.Spend_Country_Code_AFID IS NULL))
       OR
-      (aba.Country_Code IS NULL OR aba.Country_Code = '')
+      (acm.Country_Code IS NULL OR acm.Country_Code = '')
     )
-  GROUP BY aba.Report_date, aba.App_Name, aba.Country_Code
-),
-
--- VG CHANGE: Filtered to 7 active apps only
-vg_last_spend_dates AS (
-  SELECT 
-    aba.Report_date,
-    MAX(ads.Date) AS last_spend_date
-  FROM (
-    SELECT DISTINCT Report_date
-    FROM app_base_aggregated
-    WHERE App_Name = 'VG' AND Billing_Cycle = 0
-  ) aba
-LEFT JOIN `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL` ads
-    ON ads.Date <= aba.Report_date
-    AND ads.allocated_spend > 0
-  INNER JOIN active_vg_apps ava
-    ON ads.App_Name = ava.App_Name
-  GROUP BY aba.Report_date
-),
-
-vg_spend_date_windows AS (
-  SELECT 
-    Report_date,
-    last_spend_date,
-    CASE 
-      WHEN last_spend_date IS NOT NULL 
-      THEN DATE_SUB(last_spend_date, INTERVAL (SELECT recent_cac_days FROM config) - 1 DAY)
-      ELSE NULL
-    END AS window_start_date,
-    last_spend_date AS window_end_date
-  FROM vg_last_spend_dates
-),
-
--- VG CHANGE: Filtered to 7 active apps only
-vg_recent_spend_calc AS (
-  SELECT 
-    sdw.Report_date,
-    CASE 
-      WHEN sdw.window_start_date IS NOT NULL THEN
-        COALESCE(SUM(ads.allocated_spend), 0)
-      ELSE 0
-    END AS Recent_Spend
-  FROM vg_spend_date_windows sdw
-LEFT JOIN `variant-finance-data-project.Ad_spend_data.Merged_Spend_Split_TBL` ads
-    ON ads.Date BETWEEN sdw.window_start_date AND sdw.window_end_date
-    AND ads.allocated_spend > 0
-  INNER JOIN active_vg_apps ava
-    ON ads.App_Name = ava.App_Name
-  GROUP BY sdw.Report_date, sdw.window_start_date
-),
-
--- VG CHANGE: Filtered to 7 active apps (2-letter prefix)
-vg_recent_users_calc AS (
-  SELECT 
-    sdw.Report_date,
-    CASE 
-      WHEN sdw.window_start_date IS NOT NULL THEN
-        COUNT(DISTINCT base.Updated_Cust_ID)
-      ELSE 0
-    END AS Recent_Users
-  FROM vg_spend_date_windows sdw
-  LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` base
-    ON base.Date_of_Sale BETWEEN sdw.window_start_date AND sdw.window_end_date
-    AND base.Trial_Type IS NOT NULL
-    AND base.Trial_Type != 'SS'
-AND (
-      (base.Trial_Type = 'NT' AND base.Billing_Cycle_Updated = 1)
-      OR (base.Trial_Type != 'NT' AND base.Billing_Cycle_Updated = 0)
-    )
-  INNER JOIN active_vg_prefixes avp
-    ON LEFT(base.App_Name, 2) = avp.App_Prefix
-  GROUP BY sdw.Report_date, sdw.window_start_date
-),
-
--- VG CHANGE: Filtered to 7 active apps (2-letter prefix)
-vg_t30d_new_users_calc AS (
-  SELECT 
-    aba.Report_date,
-    COUNT(DISTINCT base.Updated_Cust_ID) AS T30D_New_Users
-  FROM (
-    SELECT DISTINCT Report_date
-    FROM app_base_aggregated
-    WHERE App_Name = 'VG'
-  ) aba
-  LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL` base
-    ON base.Date_of_Sale BETWEEN DATE_SUB(aba.Report_date, INTERVAL 29 DAY) AND aba.Report_date
-    AND base.Trial_Type IS NOT NULL
-    AND base.Trial_Type != 'SS'
-AND (
-      (base.Trial_Type = 'NT' AND base.Billing_Cycle_Updated = 1)
-      OR (base.Trial_Type != 'NT' AND base.Billing_Cycle_Updated = 0)
-    )
-  INNER JOIN active_vg_prefixes avp
-    ON LEFT(base.App_Name, 2) = avp.App_Prefix
-  GROUP BY aba.Report_date
+  GROUP BY acm.Report_date, acm.App_Name, acm.Country_Code
 ),
 
 -- =====================================================
--- VG REFUND RATIO FROM LOOKUP
--- VG CHANGE: Filtered to 7 active apps only
--- =====================================================
-vg_refund_from_lookup AS (
-  SELECT
-    aba.Report_date,
-    aba.Billing_Cycle,
-    COALESCE(
-      SAFE_DIVIDE(
-        SUM(COALESCE(rfl.Refund_Ratio, 0) * aba.CB_Value),
-        SUM(aba.CB_Value)
-      ),
-      0
-    ) AS Refund_ratio
-  FROM app_base_aggregated aba
-  LEFT JOIN `variant-finance-data-project.ICARUS_Multi.Refund_Table_App_Level` rfl
-    ON aba.Report_date = rfl.Report_date
-    AND aba.App_Name = rfl.App_Name
-    AND aba.Billing_Cycle = rfl.Billing_Cycle
-  WHERE aba.App_Name IN (SELECT App_Name FROM active_vg_apps)
-  GROUP BY aba.Report_date, aba.Billing_Cycle
-),
-
--- =====================================================
--- CTE 7: ASSEMBLE ALL BASE DATA + CHURN RATE
+-- CTE 9: ASSEMBLE ALL BASE DATA + CHURN RATE
 -- =====================================================
 with_churn AS (
   SELECT 
-    aba.Report_date,
-    aba.App_Name,
-    aba.Country_Code,
-    aba.Billing_Cycle,
+    acm.Report_date,
+    acm.App_Name,
+    acm.Country_Code,
+    acm.Billing_Cycle,
     
-    aba.Subscription_users,
-    aba.Subscription_value,
-    aba.CB_User,
-    aba.CB_Value,
-    aba.SS_Users,
-    aba.Single_Sale_Value,
-    aba.Day_0_user,
+    -- Base metrics (from product table aggregation)
+    acm.Subscription_users,
+    acm.Subscription_value,
+    acm.Day_0_user,
+    acm.Day_0_values,
+    acm.SOT_Ratio,
+    acm.CB_User,
+    acm.CB_Value,
+    acm.SS_Users,
+    acm.Single_Sale_Value,
     
-    -- Recent metrics
+    -- Refund components (carry forward for final calc)
+    acm.weighted_refund_numerator,
+    acm.weighted_refund_denominator,
+    
+    -- Recent metrics (from source tables, BC0 only)
     CASE 
-      WHEN aba.Billing_Cycle = 0 AND aba.App_Name = 'VG' THEN COALESCE(vg_rsc.Recent_Spend, 0)
-      WHEN aba.Billing_Cycle = 0 THEN COALESCE(rsc.Recent_Spend, 0)
+      WHEN acm.Billing_Cycle = 0 THEN COALESCE(rsc.Recent_Spend, 0)
       ELSE 0
     END AS Recent_Spend,
     CASE 
-      WHEN aba.Billing_Cycle = 0 AND aba.App_Name = 'VG' THEN COALESCE(vg_ruc.Recent_Users, 0)
-      WHEN aba.Billing_Cycle = 0 THEN COALESCE(ruc.Recent_Users, 0)
+      WHEN acm.Billing_Cycle = 0 THEN COALESCE(ruc.Recent_Users, 0)
       ELSE 0
     END AS Recent_Users,
     
-    CASE 
-      WHEN aba.App_Name = 'VG' THEN COALESCE(vg_t30d.T30D_New_Users, 0)
-      ELSE COALESCE(t30d.T30D_New_Users, 0)
-    END AS T30D_New_Users,
+    -- T30D New Users (from source table)
+    COALESCE(t30d.T30D_New_Users, 0) AS T30D_New_Users,
     
-    CASE 
-      WHEN aba.App_Name = 'VG' THEN COALESCE(vg_rfl.Refund_ratio, 0)
-      ELSE COALESCE(rfl.Refund_Ratio, 0)
-    END AS Refund_ratio,
+    -- Refund ratio (weighted avg by CB_Value)
+    COALESCE(
+      SAFE_DIVIDE(acm.weighted_refund_numerator, NULLIF(acm.weighted_refund_denominator, 0)),
+      0
+    ) AS Refund_ratio,
     
-    -- Churn rate
+    -- Churn rate: BC0 = 0.0, else = 1 - CB_User/Subscription_users
     CASE 
-      WHEN aba.Billing_Cycle = 0 THEN 0.00
-      ELSE 1 - COALESCE(SAFE_DIVIDE(aba.CB_User, NULLIF(aba.Subscription_users, 0)), 0)
+      WHEN acm.Billing_Cycle = 0 THEN 0.00
+      ELSE 1 - COALESCE(SAFE_DIVIDE(acm.CB_User, NULLIF(acm.Subscription_users, 0)), 0)
     END AS Churn_rate
     
-  FROM app_base_aggregated aba
+  FROM app_cb_metrics acm
   LEFT JOIN recent_spend_calc rsc
-    ON aba.Report_date = rsc.Report_date
-    AND aba.App_Name = rsc.App_Name
-    AND aba.Country_Code = rsc.Country_Code
-    AND aba.Billing_Cycle = 0
-    AND aba.App_Name != 'VG'
+    ON acm.Report_date = rsc.Report_date
+    AND acm.App_Name = rsc.App_Name
+    AND acm.Country_Code = rsc.Country_Code
+    AND acm.Billing_Cycle = 0
   LEFT JOIN recent_users_calc ruc
-    ON aba.Report_date = ruc.Report_date
-    AND aba.App_Name = ruc.App_Name
-    AND aba.Country_Code = ruc.Country_Code
-    AND aba.Billing_Cycle = 0
-    AND aba.App_Name != 'VG'
+    ON acm.Report_date = ruc.Report_date
+    AND acm.App_Name = ruc.App_Name
+    AND acm.Country_Code = ruc.Country_Code
+    AND acm.Billing_Cycle = 0
   LEFT JOIN t30d_new_users_calc t30d
-    ON aba.Report_date = t30d.Report_date
-    AND aba.App_Name = t30d.App_Name
-    AND aba.Country_Code = t30d.Country_Code
-    AND aba.App_Name != 'VG'
-  LEFT JOIN vg_recent_spend_calc vg_rsc
-    ON aba.Report_date = vg_rsc.Report_date
-    AND aba.App_Name = 'VG'
-    AND aba.Billing_Cycle = 0
-  LEFT JOIN vg_recent_users_calc vg_ruc
-    ON aba.Report_date = vg_ruc.Report_date
-    AND aba.App_Name = 'VG'
-    AND aba.Billing_Cycle = 0
-  LEFT JOIN vg_t30d_new_users_calc vg_t30d
-    ON aba.Report_date = vg_t30d.Report_date
-    AND aba.App_Name = 'VG'
-  LEFT JOIN `variant-finance-data-project.ICARUS_Multi.Refund_Table_App_Level` rfl
-    ON aba.Report_date = rfl.Report_date
-    AND aba.App_Name = rfl.App_Name
-    AND aba.Billing_Cycle = rfl.Billing_Cycle
-    AND aba.App_Name != 'VG'
-  LEFT JOIN vg_refund_from_lookup vg_rfl
-    ON aba.Report_date = vg_rfl.Report_date
-    AND aba.Billing_Cycle = vg_rfl.Billing_Cycle
-    AND aba.App_Name = 'VG'
+    ON acm.Report_date = t30d.Report_date
+    AND acm.App_Name = t30d.App_Name
+    AND acm.Country_Code = t30d.Country_Code
 ),
 
+
 -- =====================================================
--- RETENTION CASCADE (unchanged)
+-- RETENTION CASCADE
+-- BC0 = 1.0 ALWAYS (no threshold check)
+-- NT plans have CB_User = 0 at BC0 by design (rebills map to BC1)
+-- Threshold checks (CB_User < 25) apply from BC1 onwards only
+-- NULL cascade: if previous BC is NULL or CB_User < 25 at current BC
+-- Partition by Report_date, App_Name, Country_Code
 -- =====================================================
 retention_step_0 AS (
   SELECT 
     wc.*,
     CASE 
+      -- BC0 = 1.0 ALWAYS (no threshold check)
+      -- NT plans have CB_User = 0 at BC0 by design (rebills map to BC1)
+      -- Threshold checks apply from BC1 onwards only
       WHEN wc.Billing_Cycle = 0 THEN 1.0
       ELSE NULL
     END AS step_0_retention
@@ -435,7 +356,7 @@ retention_step_1 AS (
             PARTITION BY rs0.Report_date, rs0.App_Name, rs0.Country_Code
             ORDER BY rs0.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs0.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs0.CB_User < 25 THEN NULL
           ELSE LAG(rs0.step_0_retention) OVER (
             PARTITION BY rs0.Report_date, rs0.App_Name, rs0.Country_Code
             ORDER BY rs0.Billing_Cycle
@@ -457,7 +378,7 @@ retention_step_2 AS (
             PARTITION BY rs1.Report_date, rs1.App_Name, rs1.Country_Code
             ORDER BY rs1.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs1.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs1.CB_User < 25 THEN NULL
           ELSE LAG(rs1.step_1_retention) OVER (
             PARTITION BY rs1.Report_date, rs1.App_Name, rs1.Country_Code
             ORDER BY rs1.Billing_Cycle
@@ -479,7 +400,7 @@ retention_step_3 AS (
             PARTITION BY rs2.Report_date, rs2.App_Name, rs2.Country_Code
             ORDER BY rs2.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs2.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs2.CB_User < 25 THEN NULL
           ELSE LAG(rs2.step_2_retention) OVER (
             PARTITION BY rs2.Report_date, rs2.App_Name, rs2.Country_Code
             ORDER BY rs2.Billing_Cycle
@@ -501,7 +422,7 @@ retention_step_4 AS (
             PARTITION BY rs3.Report_date, rs3.App_Name, rs3.Country_Code
             ORDER BY rs3.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs3.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs3.CB_User < 25 THEN NULL
           ELSE LAG(rs3.step_3_retention) OVER (
             PARTITION BY rs3.Report_date, rs3.App_Name, rs3.Country_Code
             ORDER BY rs3.Billing_Cycle
@@ -523,7 +444,7 @@ retention_step_5 AS (
             PARTITION BY rs4.Report_date, rs4.App_Name, rs4.Country_Code
             ORDER BY rs4.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs4.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs4.CB_User < 25 THEN NULL
           ELSE LAG(rs4.step_4_retention) OVER (
             PARTITION BY rs4.Report_date, rs4.App_Name, rs4.Country_Code
             ORDER BY rs4.Billing_Cycle
@@ -545,7 +466,7 @@ retention_step_6 AS (
             PARTITION BY rs5.Report_date, rs5.App_Name, rs5.Country_Code
             ORDER BY rs5.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs5.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs5.CB_User < 25 THEN NULL
           ELSE LAG(rs5.step_5_retention) OVER (
             PARTITION BY rs5.Report_date, rs5.App_Name, rs5.Country_Code
             ORDER BY rs5.Billing_Cycle
@@ -567,7 +488,7 @@ retention_step_7 AS (
             PARTITION BY rs6.Report_date, rs6.App_Name, rs6.Country_Code
             ORDER BY rs6.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs6.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs6.CB_User < 25 THEN NULL
           ELSE LAG(rs6.step_6_retention) OVER (
             PARTITION BY rs6.Report_date, rs6.App_Name, rs6.Country_Code
             ORDER BY rs6.Billing_Cycle
@@ -589,7 +510,7 @@ retention_step_8 AS (
             PARTITION BY rs7.Report_date, rs7.App_Name, rs7.Country_Code
             ORDER BY rs7.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs7.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs7.CB_User < 25 THEN NULL
           ELSE LAG(rs7.step_7_retention) OVER (
             PARTITION BY rs7.Report_date, rs7.App_Name, rs7.Country_Code
             ORDER BY rs7.Billing_Cycle
@@ -611,7 +532,7 @@ retention_step_9 AS (
             PARTITION BY rs8.Report_date, rs8.App_Name, rs8.Country_Code
             ORDER BY rs8.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs8.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs8.CB_User < 25 THEN NULL
           ELSE LAG(rs8.step_8_retention) OVER (
             PARTITION BY rs8.Report_date, rs8.App_Name, rs8.Country_Code
             ORDER BY rs8.Billing_Cycle
@@ -633,7 +554,7 @@ retention_step_10 AS (
             PARTITION BY rs9.Report_date, rs9.App_Name, rs9.Country_Code
             ORDER BY rs9.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs9.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs9.CB_User < 25 THEN NULL
           ELSE LAG(rs9.step_9_retention) OVER (
             PARTITION BY rs9.Report_date, rs9.App_Name, rs9.Country_Code
             ORDER BY rs9.Billing_Cycle
@@ -655,7 +576,7 @@ retention_step_11 AS (
             PARTITION BY rs10.Report_date, rs10.App_Name, rs10.Country_Code
             ORDER BY rs10.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs10.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs10.CB_User < 25 THEN NULL
           ELSE LAG(rs10.step_10_retention) OVER (
             PARTITION BY rs10.Report_date, rs10.App_Name, rs10.Country_Code
             ORDER BY rs10.Billing_Cycle
@@ -677,7 +598,7 @@ retention_step_12 AS (
             PARTITION BY rs11.Report_date, rs11.App_Name, rs11.Country_Code
             ORDER BY rs11.Billing_Cycle
           ) IS NULL THEN NULL
-          WHEN rs11.CB_User < (SELECT minimum_cb_users FROM config) THEN NULL
+          WHEN rs11.CB_User < 25 THEN NULL
           ELSE LAG(rs11.step_11_retention) OVER (
             PARTITION BY rs11.Report_date, rs11.App_Name, rs11.Country_Code
             ORDER BY rs11.Billing_Cycle
@@ -688,36 +609,37 @@ retention_step_12 AS (
   FROM retention_step_11 rs11
 ),
 
+-- =====================================================
+-- ACTIVE/INACTIVE STATUS
+-- Active if ANY product under this App exists in Active_Plans_6M
+-- =====================================================
 active_apps AS (
   SELECT DISTINCT App_Name
   FROM `variant-finance-data-project.ICARUS_Multi.Active_Plans_6M`
 ),
 
+-- =====================================================
+-- FINAL CALCULATIONS
+-- Assemble all computed metrics
+-- NULL cascade: all downstream metrics NULL when Retention_rate IS NULL
+-- =====================================================
 final_calculations AS (
   SELECT 
     rs12.*,
     
+    -- Active/Inactive
     CASE 
-      WHEN rs12.App_Name = 'VG' THEN 'Active'
       WHEN aa.App_Name IS NOT NULL THEN 'Active'
       ELSE 'Inactive'
     END AS Active_Inactive,
     
-    CASE 
-      WHEN rs12.Retention_rate IS NULL THEN NULL
-      ELSE rs12.Churn_rate
-    END AS final_Churn_rate,
-    
-    CASE 
-      WHEN rs12.Retention_rate IS NULL THEN NULL
-      ELSE rs12.Refund_ratio
-    END AS final_Refund_ratio,
-    
+    -- NET Retention rate
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE rs12.Retention_rate - rs12.Refund_ratio
     END AS NET_Retention_rate,
     
+    -- Recent CAC (BC0 only)
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE COALESCE(
@@ -730,6 +652,7 @@ final_calculations AS (
       )
     END AS Recent_CAC,
     
+    -- ARPU_Discounted = (CB_Value/CB_User) x Retention + SS/Subscription_users
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE COALESCE(
@@ -741,6 +664,7 @@ final_calculations AS (
       )
     END AS ARPU_Discounted,
     
+    -- Net_ARPU_Discounted = (CB_Value/CB_User) x (Retention - Refund) + SS/Subscription_users
     CASE 
       WHEN rs12.Retention_rate IS NULL THEN NULL
       ELSE COALESCE(
@@ -757,35 +681,47 @@ final_calculations AS (
     ON rs12.App_Name = aa.App_Name
 )
 
+-- =====================================================
+-- FINAL OUTPUT
+-- =====================================================
 SELECT 
+  -- Dimensions (4)
   fc.Report_date,
   fc.App_Name,
   fc.Country_Code,
   fc.Billing_Cycle,
   
+  -- Status (1)
   fc.Active_Inactive,
   
+  -- Base Metrics - from product table SUM (6)
   fc.Subscription_users,
   fc.Subscription_value,
-  fc.CB_User,
-  fc.CB_Value,
+  fc.Day_0_user,
+  fc.Day_0_values,
   fc.SS_Users,
   fc.Single_Sale_Value,
   
+  -- Base Metrics - from source tables (3)
   fc.Recent_Spend,
   fc.Recent_Users,
   fc.T30D_New_Users,
   
-  fc.final_Churn_rate AS Churn_rate,
-  fc.final_Refund_ratio AS Refund_ratio,
+  -- SOT & Crystal Ball (3)
+  fc.SOT_Ratio,
+  fc.CB_User,
+  fc.CB_Value,
+  
+  -- Rates (4)
+  fc.Churn_rate,
+  fc.Refund_ratio,
   fc.Retention_rate,
   fc.NET_Retention_rate,
   
+  -- CAC (1)
   fc.Recent_CAC,
   
-  fc.Day_0_user,
-  SAFE_DIVIDE(fc.Day_0_user, NULLIF(fc.CB_User, 0)) AS SOT_Projection,
-  
+  -- Revenue Metrics - Discounted only (3)
   fc.ARPU_Discounted,
   fc.Net_ARPU_Discounted,
   CASE 
@@ -796,4 +732,15 @@ SELECT
 FROM final_calculations fc
 ORDER BY fc.Report_date DESC, fc.App_Name, fc.Country_Code, fc.Billing_Cycle;
 
-end;
+-- =====================================================
+-- SCRIPT COMPLETE - 7K CRYSTAL BALL APP LEVEL
+-- 
+-- BC0 FIX APPLIED:
+-- retention_step_0 now sets BC0 = 1.0 ALWAYS
+-- Previous version checked CB_User < 25 at BC0 which broke
+-- NT-only Apps (NT rebills map to BC1, so BC0 CB_User = 0)
+-- Threshold (CB_User < 25) still applies at BC1-BC12
+-- =====================================================
+
+-- Add these 2 lines at bottom
+END;
