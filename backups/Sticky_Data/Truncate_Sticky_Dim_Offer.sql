@@ -1,1 +1,0 @@
-TRUNCATE TABLE Sticky_Data.Sticky_Dim_Offer

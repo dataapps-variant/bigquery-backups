@@ -1,1 +1,0 @@
-TRUNCATE TABLE Ad_spend_data.Dim_spend_split

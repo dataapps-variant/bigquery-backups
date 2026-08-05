@@ -4,6 +4,8 @@ renamed in BigQuery since the last run)."""
 from __future__ import annotations
 
 import logging
+import os
+import stat
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -81,12 +83,17 @@ def _prune_empty_dirs(root: Path) -> None:
         except StopIteration:
             try:
                 dirpath.rmdir()
-            except (PermissionError, OSError):
-                # A cloud-sync client (OneDrive, Dropbox, etc.) can briefly
-                # hold a lock on a directory right after a burst of file
-                # deletions. Leaving an empty folder behind is harmless —
-                # git doesn't track empty directories anyway — so skip it
-                # rather than let the whole backup run fail.
+            except PermissionError:
+                # OneDrive (and some other Windows cloud-sync clients) can
+                # leave the read-only attribute set on a folder after a
+                # burst of file deletions, which blocks removal even once
+                # it's empty — clear it and retry once.
+                try:
+                    os.chmod(dirpath, stat.S_IWRITE)
+                    dirpath.rmdir()
+                except OSError:
+                    logger.warning("Could not remove empty directory (left in place): %s", dirpath)
+            except OSError:
                 logger.warning("Could not remove empty directory (left in place): %s", dirpath)
         except FileNotFoundError:
             pass

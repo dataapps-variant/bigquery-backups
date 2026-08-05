@@ -8,13 +8,24 @@ removed automatically."""
 from __future__ import annotations
 
 import logging
+import os
 import re
 import shutil
+import stat
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _DATE_FOLDER_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _clear_readonly_and_retry(func, path, exc):
+    # OneDrive (and some other Windows cloud-sync clients) can leave the
+    # read-only attribute set on folders after a large batch of changes,
+    # which blocks deletion even once the folder is empty. This is the
+    # standard workaround: clear it and retry the failed operation.
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
 
 
 def prune_old_snapshots(backup_root: Path, keep: int) -> list[str]:
@@ -38,9 +49,13 @@ def prune_old_snapshots(backup_root: Path, keep: int) -> list[str]:
             continue
         try:
             if path.is_dir():
-                shutil.rmtree(path)
+                shutil.rmtree(path, onexc=_clear_readonly_and_retry)
             else:
-                path.unlink()
+                try:
+                    path.unlink()
+                except PermissionError:
+                    os.chmod(path, stat.S_IWRITE)
+                    path.unlink()
             removed.append(path.name)
             logger.info("Pruned old snapshot content: %s", path.name)
         except OSError:

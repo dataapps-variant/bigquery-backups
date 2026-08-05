@@ -5,7 +5,7 @@
   "display_name": "Google_merged_final_spend_lagged",
   "email_preferences": {},
   "name": "projects/1041741270489/locations/us/transferConfigs/6a767c2d-0000-249b-b021-f4f5e806de08",
-  "next_run_time": "2026-08-05T10:40:00Z",
+  "next_run_time": "2026-08-05T11:40:00Z",
   "params": {
     "query": "CREATE OR REPLACE TABLE\n  `variant-finance-data-project.vatiant_finance_Google_Query_Test.Google_merged_final_spend_lagged`\nAS\nSELECT\n  Channel_name, Date, Channel_type, Channel_code,\n  App_name, Final_URL_suffix_AFID, Country,\n  Amount, Source,\n  current_timestamp AS captured_at\nFROM `variant-finance-data-project.vatiant_finance_Google_Query_Test.Google_merged_final_spend`;"
   },
