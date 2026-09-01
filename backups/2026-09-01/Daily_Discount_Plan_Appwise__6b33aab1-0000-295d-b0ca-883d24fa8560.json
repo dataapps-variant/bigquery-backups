@@ -1,0 +1,22 @@
+{
+  "data_source_id": "scheduled_query",
+  "dataset_region": "us",
+  "destination_dataset_id": "",
+  "display_name": "Daily_Discount_Plan_Appwise",
+  "email_preferences": {},
+  "name": "projects/1041741270489/locations/us/transferConfigs/6b33aab1-0000-295d-b0ca-883d24fa8560",
+  "next_run_time": "2026-09-02T09:00:00Z",
+  "params": {
+    "query": "CREATE OR REPLACE TABLE `variant-finance-data-project.Utilities.Daily_Discounts_Plan_AppWise` AS\r\n\r\nWITH base AS (\r\n  SELECT\r\n    Date_of_Sale,\r\n    App_Name,\r\n    CASE\r\n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID = 'JP' THEN 'JP'\r\n      WHEN App_Name = 'CT' THEN 'Non-JP'\r\n      ELSE ''\r\n    END AS Country,\r\n    Billing_Cycle_Updated AS Billing_Cycle,\r\n    Plan_Price_Net_of_Tax_USD,\r\n    Order_Price_Net_of_Tax_USD\r\n  FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\r\n  WHERE Date_of_Sale >= DATE_SUB(DATE '2025-01-01', INTERVAL 29 DAY)\r\n  AND Billing_Cycle_Updated < 25\r\n  AND App_Name IN ('EN', 'CT', 'FS', 'JF', 'PD', 'CL', 'MB')  -- ✅ kept MB\r\n  AND Trial_Type != 'SS'                                         -- ✅ single quotes\r\n),\r\n\r\noutput_groups AS (\r\n  SELECT DISTINCT\r\n    Date_of_Sale AS Date,\r\n    App_Name,\r\n    CASE\r\n      WHEN App_Name = 'CT' AND Spend_Country_Code_AFID = 'JP' THEN 'JP'\r\n      WHEN App_Name = 'CT' THEN 'Non-JP'\r\n      ELSE ''\r\n    END AS Country,\r\n    Billing_Cycle_Updated AS Billing_Cycle\r\n  FROM `variant-finance-data-project.Sticky_Data.Sticky_data_API_original_V_Merged_TBL`\r\n  WHERE Date_of_Sale >= DATE '2025-01-01'                        -- ✅ DATE literal\r\n  AND Billing_Cycle_Updated < 25\r\n  AND App_Name IN ('EN', 'CT', 'FS', 'JF', 'PD', 'CL', 'MB')  -- ✅ added MB\r\n  AND Trial_Type != 'SS'                                         -- ✅ single quotes\r\n),\r\n\r\ncohort_transactions AS (\r\n  SELECT\r\n    g.Date,\r\n    g.App_Name,\r\n    g.Country,\r\n    g.Billing_Cycle,\r\n    b.Date_of_Sale AS Txn_Date,\r\n    b.Plan_Price_Net_of_Tax_USD,\r\n    b.Order_Price_Net_of_Tax_USD,\r\n    ROW_NUMBER() OVER (\r\n      PARTITION BY g.Date, g.App_Name, g.Country, g.Billing_Cycle\r\n      ORDER BY b.Date_of_Sale DESC\r\n    ) AS rn\r\n  FROM output_groups g\r\n  JOIN base b\r\n    ON  b.App_Name      = g.App_Name\r\n    AND b.Billing_Cycle = g.Billing_Cycle\r\n    AND b.Country       = g.Country\r\n    AND b.Date_of_Sale BETWEEN DATE_SUB(g.Date, INTERVAL 29 DAY) AND g.Date\r\n)\r\n\r\nSELECT\r\n  Date,\r\n  CASE\r\n    WHEN App_Name = 'CT' AND Country = 'JP'     THEN 'CT-JP'\r\n    WHEN App_Name = 'CT' AND Country = 'Non-JP' THEN 'CT-Non-JP'\r\n    ELSE App_Name\r\n  END                                                               AS App,\r\n  Country,\r\n  Billing_Cycle,\r\n  SUM(Plan_Price_Net_of_Tax_USD)                                    AS Plan_Price,\r\n  SUM(Order_Price_Net_of_Tax_USD)                                   AS Order_Price,\r\n  SUM(Plan_Price_Net_of_Tax_USD) - SUM(Order_Price_Net_of_Tax_USD)  AS Discount,\r\n  SAFE_DIVIDE(\r\n    SUM(SUM(Plan_Price_Net_of_Tax_USD) - SUM(Order_Price_Net_of_Tax_USD))\r\n      OVER (PARTITION BY Date, Country, App_Name, Billing_Cycle),\r\n    SUM(SUM(Plan_Price_Net_of_Tax_USD))\r\n      OVER (PARTITION BY Date, Country, App_Name, Billing_Cycle)\r\n  )                                                                 AS App_Level_Disc_Perc,\r\n  SAFE_DIVIDE(\r\n    SUM(SUM(Plan_Price_Net_of_Tax_USD) - SUM(Order_Price_Net_of_Tax_USD))\r\n      OVER (\r\n        PARTITION BY Date, Country, App_Name\r\n        ORDER BY Billing_Cycle\r\n        RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\r\n      ),\r\n    SUM(SUM(Plan_Price_Net_of_Tax_USD))\r\n      OVER (\r\n        PARTITION BY Date, Country, App_Name\r\n        ORDER BY Billing_Cycle\r\n        RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW\r\n      )\r\n  )                                                                 AS App_Level_Cumulative_Disc_Perc\r\nFROM cohort_transactions\r\nWHERE rn <= 7000           -- ⚠️ sampled: metrics reflect most-recent 7000 rows only\r\nGROUP BY Date, App_Name, Country, Billing_Cycle\r\nORDER BY Date, Billing_Cycle"
+  },
+  "schedule": "every day 09:00",
+  "schedule_options": {},
+  "schedule_options_v2": {
+    "time_based_schedule": {
+      "schedule": "every day 09:00"
+    }
+  },
+  "state": "SUCCEEDED",
+  "update_time": "2026-08-20T10:43:06.891250Z",
+  "user_id": "-7598719194024014828"
+}
