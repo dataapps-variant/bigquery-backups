@@ -1,0 +1,296 @@
+CREATE VIEW `variant-finance-data-project.chargebee.Chargebee_data_API_original_PD_V_W_EC`
+AS WITH
+
+Base AS (
+  SELECT
+    CB.*,
+    CASE
+      WHEN CB.site_org_name = 'PDF Dot Net LLC' THEN 'PD'
+      ELSE CB.site_org_name
+    END AS Entity_Code,
+    CASE
+      WHEN CB.family_id = 'pdf-net' THEN 'PD'
+      ELSE CB.family_id
+    END AS App_Code,
+    TIMESTAMP_SECONDS(SAFE_CAST(CB.invoice_date AS INT64))                 AS invoice_ts,
+    TIMESTAMP_SECONDS(SAFE_CAST(CB.invoice_updated_at AS INT64))          AS invoice_updated_ts,
+    TIMESTAMP_SECONDS(SAFE_CAST(CB.customer_created_at AS INT64))         AS customer_created_ts,
+    TIMESTAMP_SECONDS(SAFE_CAST(CB.next_billing_at AS INT64))             AS next_billing_ts,
+    TIMESTAMP_SECONDS(SAFE_CAST(CB.dunning_attempt_1_created_at AS INT64)) AS dunning_1_ts,
+    TIMESTAMP_SECONDS(SAFE_CAST(CB.transaction_date AS INT64))            AS transaction_ts,
+    TIMESTAMP_SECONDS(SAFE_CAST(CB.cn_refunded_at AS INT64))              AS cn_refunded_ts,
+    SAFE_DIVIDE(SAFE_CAST(CB.invoice_total AS FLOAT64), 100)                    AS invoice_total_amt,
+    SAFE_DIVIDE(SAFE_CAST(CB.invoice_sub_total AS FLOAT64), 100)                AS invoice_sub_total_amt,
+    SAFE_DIVIDE(SAFE_CAST(CB.tax AS FLOAT64), 100)                              AS tax_amt,
+    SAFE_DIVIDE(SAFE_CAST(CB.plan_unit_price AS FLOAT64), 100)                  AS plan_unit_price_amt,
+    SAFE_DIVIDE(SAFE_CAST(CB.price AS FLOAT64), 100)                            AS product_price_amt,
+    SAFE_DIVIDE(SAFE_CAST(CB.trial_charge_unit_price AS FLOAT64), 100)          AS trial_price_amt,
+    SAFE_DIVIDE(SAFE_CAST(CB.cn_total_amount_refunded AS FLOAT64), 100)         AS refund_amt,
+    SAFE_DIVIDE(SAFE_CAST(CB.line1_item_level_discount_amount AS FLOAT64), 100) AS rebill_discount_amt,
+    CASE
+      WHEN UPPER(CB.invoice_currency_code) = 'USD' THEN 1.0
+      ELSE COALESCE(SAFE_CAST(CB.invoice_exchange_rate AS FLOAT64), 1.0)
+    END AS fx_rate,
+    COALESCE(NULLIF(CB.afid,''), NULLIF(CB.cf_afid,''), NULLIF(CB.meta_data_afid,''), NULLIF(CB.customer_cf_afid,'')) AS afid_final,
+    COALESCE(NULLIF(CB.sid,''),  NULLIF(CB.cf_sid,''),  NULLIF(CB.meta_data_sid,''),  NULLIF(CB.customer_cf_sid,''))  AS sid_final,
+    COALESCE(NULLIF(CB.c1,''),   NULLIF(CB.cf_c1,''),   NULLIF(CB.meta_data_c1,''),   NULLIF(CB.customer_cf_c1,''))   AS c1_final,
+    COALESCE(NULLIF(CB.c2,''),   NULLIF(CB.cf_c2,''),   NULLIF(CB.meta_data_c2,''),   NULLIF(CB.customer_cf_c2,''))   AS c2_final,
+    COALESCE(NULLIF(CB.c3,''),   NULLIF(CB.cf_c3,''),   NULLIF(CB.meta_data_c3,''),   NULLIF(CB.customer_cf_c3,''))   AS c3_final,
+    COALESCE(NULLIF(CB.aid,''),  NULLIF(CB.cf_aid,''),  NULLIF(CB.meta_data_aid,''),  NULLIF(CB.customer_cf_aid,''))  AS aid_final,
+    COALESCE(NULLIF(CB.opt,''),  NULLIF(CB.cf_opt,''),  NULLIF(CB.meta_data_opt,''),  NULLIF(CB.customer_cf_opt,''))  AS opt_final,
+    COALESCE(NULLIF(CB.campaign_id,''), NULLIF(CB.cf_campaign_id,''), NULLIF(CB.meta_data_campaign_id,''), NULLIF(CB.customer_cf_campaign_id,'')) AS campaign_id_final,
+    ROW_NUMBER() OVER (
+      PARTITION BY CB.subscription_id
+      ORDER BY SAFE_CAST(CB.invoice_date AS INT64), CAST(CB.invoice_id AS STRING)
+    ) - 1 AS billing_cycle_num
+  FROM `variant-finance-data-project.chargebee.fct_orders_full` AS CB
+)
+
+SELECT
+  'Chargebee'                                                     AS Platform,
+  FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', B.invoice_updated_ts, 'America/New_York') AS last_updated,
+  CAST(B.invoice_id AS STRING)                                    AS Order_Id,
+  CAST(B.billing_first_name AS STRING)                            AS Bill_First,
+  CAST(B.billing_last_name AS STRING)                             AS Bill_Last,
+  CAST(B.cust_city AS STRING)                                     AS Bill_Address1,
+  CAST(B.cust_city AS STRING)                                     AS Bill_Address2,
+  CAST(B.billing_city AS STRING)                                  AS Bill_City,
+  CAST(B.billing_state_code AS STRING)                            AS Bill_State,
+  CAST(B.billing_zip AS STRING)                                   AS Bill_Zip,
+  CAST(B.billing_country AS STRING)                               AS Bill_Country,
+  CAST(NULL AS STRING)                                            AS Bill_Phone,
+  CAST(B.customer_email AS STRING)                                AS Bill_Email,
+  CAST(B.cust_first_name AS STRING)                               AS Ship_First,
+  CAST(B.cust_last_name AS STRING)                                AS Ship_Last,
+  CAST(B.cust_city AS STRING)                                     AS Ship_Address1,
+  CAST(B.cust_city AS STRING)                                     AS Ship_Address2,
+  CAST(B.cust_city AS STRING)                                     AS Ship_City,
+  CAST(B.cust_state_code AS STRING)                               AS Ship_State,
+  CAST(B.cust_zip AS STRING)                                      AS Ship_Zip,
+  CAST(B.cust_country AS STRING)                                  AS Ship_Country,
+  CAST(NULL AS STRING)                                            AS Ship_Method_Name,
+  CAST(NULL AS STRING)                                            AS Ship_Price,
+  FORMAT('%.2f', B.invoice_sub_total_amt)                         AS Sub_Total,
+  CAST(B.line_tax_1_tax_rate AS STRING)                           AS Sales_Tax_Percent,
+  CAST(B.line_tax_1_tax_rate AS STRING)                           AS Sales_Tax_Factor,
+  FORMAT('%.2f', B.invoice_total_amt)                             AS Order_Total,
+  DATE(B.invoice_ts, 'America/New_York')                          AS Date_of_Sale,
+  FORMAT_TIMESTAMP('%H:%M:%S', B.invoice_ts, 'America/New_York')  AS Time_Stamp,
+  FORMAT_TIMESTAMP('%Y-%m-%d', B.invoice_ts, 'America/Los_Angeles') AS Time_Stamp_LA,
+  CAST(NULL AS STRING)                                            AS Tracking_Number,
+  CASE LOWER(CAST(B.payment_method AS STRING))
+    WHEN 'google_pay'              THEN 'googlepay'
+    WHEN 'apple_pay'               THEN 'applepay'
+    WHEN 'paypal_express_checkout' THEN 'paypal'
+    WHEN 'paypal'                  THEN 'paypal'
+    WHEN 'card' THEN
+      CASE LOWER(CAST(B.txn_card_brand AS STRING))
+        WHEN 'visa'             THEN 'visa'
+        WHEN 'mastercard'       THEN 'master'
+        WHEN 'master'           THEN 'master'
+        WHEN 'american_express' THEN 'amex'
+        WHEN 'amex'             THEN 'amex'
+        WHEN 'discover'         THEN 'discover'
+        ELSE NULLIF(CAST(B.txn_card_brand AS STRING), '')
+      END
+    ELSE CAST(B.payment_method AS STRING)
+  END                                                             AS Payment,
+  CAST(B.campaign_id_final AS STRING)                             AS Campaign_Id,
+  CAST(B.customer_id AS STRING)                                   AS Customer_Number,
+  CAST(B.txn_card_masked_number AS STRING)                        AS Credit_Card_Number,
+  CASE
+    WHEN B.card_expiry_month IS NOT NULL AND B.card_expiry_year IS NOT NULL
+    THEN CONCAT(
+      LPAD(CAST(SAFE_CAST(B.card_expiry_month AS INT64) AS STRING), 2, '0'),
+      SUBSTR(CAST(SAFE_CAST(B.card_expiry_year AS INT64) AS STRING), -2)
+    )
+  END                                                             AS Credit_Card_Expiration,
+  CASE
+    WHEN LOWER(CAST(B.card_funding_type AS STRING)) = 'prepaid' THEN 'Yes'
+    WHEN B.card_funding_type IS NULL OR CAST(B.card_funding_type AS STRING) = '' THEN CAST(NULL AS STRING)
+    ELSE 'No'
+  END                                                             AS Prepaid_Match,
+  CAST(GT.Gateway_ID AS STRING)                                   AS Gateway_Id,
+  CAST(GT.Gateway_Alias AS STRING)                                AS Gateway_Descriptor,
+  CAST(NULL AS STRING)                                            AS Processor_Id,
+  CAST(B.ip_address AS STRING)                                    AS IP_Address,
+  CAST(NULL AS STRING)                                            AS IP_Address_Lookup,
+  CASE LOWER(CAST(B.invoice_status AS STRING))
+    WHEN 'paid'        THEN 2
+    WHEN 'posted'      THEN 2
+    WHEN 'payment_due' THEN 6
+    WHEN 'pending'     THEN 6
+    WHEN 'not_paid'    THEN 7
+    WHEN 'voided'      THEN 7
+    ELSE SAFE_CAST(B.invoice_status AS INT64)
+  END                                                             AS Final_Order_Status,
+  CASE
+    WHEN NULLIF(CAST(B.error_code AS STRING),'') IS NULL
+     AND NULLIF(CAST(B.error_text AS STRING),'') IS NULL THEN CAST(NULL AS STRING)
+    ELSE TRIM(CONCAT(
+      IFNULL(NULLIF(CAST(B.error_code AS STRING),''), ''), ' - ',
+      IFNULL(NULLIF(CAST(B.error_text AS STRING),''), '')
+    ), ' -')
+  END                                                             AS Decline_Reason,
+  CAST(NULL AS STRING)                                            AS Is_Cascaded,
+  CAST(NULL AS STRING)                                            AS Is_Fraud,
+  CASE WHEN LOWER(CAST(B.transaction_type AS STRING)) = 'chargeback' THEN '1' ELSE '0' END
+                                                                  AS Is_Chargeback,
+  CASE WHEN LOWER(CAST(B.transaction_type AS STRING)) = 'chargeback'
+       THEN FORMAT_TIMESTAMP('%Y-%m-%d', B.transaction_ts, 'America/New_York') END AS Chargeback_Date,
+  CAST(NULL AS STRING)                                            AS Is_RMA,
+  CAST(NULL AS STRING)                                            AS RMA_Number,
+  CAST(NULL AS STRING)                                            AS RMA_Reason,
+  CAST(NULL AS STRING)                                            AS Return_Reason,
+  CASE
+    WHEN LOWER(CAST(B.recurring AS STRING)) IN ('true','1')  THEN '1'
+    WHEN LOWER(CAST(B.recurring AS STRING)) IN ('false','0') THEN '0'
+    ELSE CAST(NULL AS STRING)
+  END                                                             AS Is_Recurring,
+  FORMAT_TIMESTAMP('%Y-%m-%d', B.next_billing_ts, 'America/New_York') AS Recurring_Date,
+  FORMAT_TIMESTAMP('%Y-%m-%d', B.dunning_1_ts, 'America/New_York') AS Retry_Date,
+  CAST(B.transaction_id AS STRING)                                AS Transaction_Number,
+  CAST(NULL AS STRING)                                            AS Auth_Number,
+  CAST(B.dunning_attempt_1_attempt AS STRING)                     AS Retry_Attempt,
+  CAST(NULL AS STRING)                                            AS Hold_Date,
+  CASE WHEN LOWER(CAST(B.transaction_type AS STRING)) = 'void' THEN 'yes' ELSE 'no' END
+                                                                  AS Is_Void,
+  CAST(NULL AS STRING)                                            AS Void_Amount,
+  CAST(NULL AS STRING)                                            AS Void_Date,
+  CASE WHEN SAFE_CAST(B.cn_total_amount_refunded AS FLOAT64) > 0 THEN 'yes' ELSE 'no' END
+                                                                  AS Is_Refund,
+  FORMAT('%.2f', COALESCE(B.refund_amt, 0))                       AS Refund_Amount,
+  FORMAT_TIMESTAMP('%Y-%m-%d', B.cn_refunded_ts, 'America/New_York') AS Refund_Date,
+  CAST(B.afid_final AS STRING)                                    AS AFID,
+  CAST(B.sid_final AS STRING)                                     AS SID,
+  CAST(NULL AS STRING)                                            AS AFFID,
+  CAST(B.c1_final AS STRING)                                      AS C1,
+  CAST(B.c2_final AS STRING)                                      AS C2,
+  CAST(B.c3_final AS STRING)                                      AS C3,
+  CAST(B.aid_final AS STRING)                                     AS AID,
+  CAST(B.opt_final AS STRING)                                     AS OPT,
+  FORMAT('%.2f', COALESCE(B.rebill_discount_amt, 0))              AS Rebill_Discount,
+  CAST(B.billing_cycle_num AS STRING)                             AS Billing_Cycle,
+  CAST(NULL AS STRING)                                            AS Parent_Order_Id,
+  CAST(B.product_id AS STRING)                                    AS Product_Id,
+  CAST(B.product_name AS STRING)                                  AS Product_Name,
+  FORMAT('%.2f', B.invoice_sub_total_amt)                         AS Product_Price,
+  CAST(B.plan_item_price_id AS STRING)                            AS Product_Sku,
+  CAST(B.plan_quantity AS STRING)                                 AS Quantity,
+  FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', B.customer_created_ts, 'America/New_York') AS Acquisition_Date_Time,
+  CAST(NULL AS STRING)                                            AS Blacklisted,
+  CAST(B.subscription_id AS STRING)                               AS Ancestor_Order_Id,
+  CAST(NULL AS STRING)                                            AS Decline_Salvage_Discount_per,
+  CAST(NULL AS STRING)                                            AS Test,
+  CAST(NULL AS STRING)                                            AS Hold_Type,
+  CAST(B.offer_id AS STRING)                                      AS Offer_Id,
+  CAST(B.card_iin AS STRING)                                      AS BIN,
+  -- ===== 3 UTM columns added here (NULL — Chargebee has no UTM) =====
+  CAST(NULL AS STRING)                                            AS utm_device_category,
+  CAST(NULL AS STRING)                                            AS utm_source,
+  CAST(NULL AS STRING)                                            AS utm_term,
+  -- ==================================================================
+  B.Entity_Code                                                   AS Entity_Name,
+  CAST(NULL AS STRING)                                            AS last_1_word,
+  CAST(NULL AS STRING)                                            AS last_2_words,
+  CAST(NULL AS STRING)                                            AS last_3_words,
+  CAST(NULL AS STRING)                                            AS IP_Country_Code,
+  CAST(B.billing_country AS STRING)                               AS Bill_Country_Code,
+  CAST(B.cust_country AS STRING)                                  AS Ship_Country_Code,
+  CASE WHEN B.campaign_id_final IS NOT NULL
+       THEN CONCAT(B.Entity_Code, '_', B.campaign_id_final) END   AS CAMPAIGN_KEY,
+  B.App_Code                                                      AS App_Name,
+  CAST(B.invoice_currency_code AS STRING)                         AS Currency,
+  CAST(B.billing_country AS STRING)                               AS Country_Code,
+  CASE
+    WHEN B.afid_final IS NULL OR B.afid_final = '' THEN 99
+    ELSE AF.afid_channel
+  END                                                            AS AFID_CHANNEL,
+  CONCAT(B.Entity_Code, '_', CAST(B.customer_id AS STRING),
+         FORMAT_TIMESTAMP('%Y-%m-%d %H:%M:%S', B.customer_created_ts, 'America/New_York'))
+                                                                  AS Updated_Cust_ID,
+  CONCAT(B.Entity_Code, '_', CAST(B.invoice_id AS STRING))        AS Updated_Order_ID,
+  CAST(B.billing_country AS STRING)                               AS Spend_Country,
+  CAST(B.tax_origin_country AS STRING)                            AS Tax_Country,
+  OFR.Trial_Period                                                                AS Trial_Period,
+  OFR.Trial_Price                                                                 AS Trial_Price,
+  OFR.Trial_Type                                                                  AS Trial_Type,
+  PRD.Product_Name_updated                                                        AS Product_Name_updated,
+  CONCAT(
+    B.App_Code,
+    PRD.Product_Name_updated,
+    OFR.Trial_Type
+  )                                                               AS Product_Name_Final,
+  CASE
+    WHEN OFR.Trial_Type = 'NT' THEN B.billing_cycle_num + 1
+    ELSE B.billing_cycle_num
+  END                                                             AS Billing_Cycle_Updated,
+  CAST(B.billing_country AS STRING)                               AS Spend_Country_Code,
+  CAST(B.tax_origin_country AS STRING)                            AS Tax_Country_Code,
+  B.fx_rate                                                       AS Exchange_Rate,
+  CASE
+    WHEN UPPER(B.billing_country) = 'US' THEN 0
+    ELSE COALESCE(
+      SAFE_DIVIDE(B.tax_amt, SAFE_SUBTRACT(B.invoice_total_amt, B.tax_amt)), 0)
+  END                                                             AS Sales_Tax_Rate_Non_US,
+  CASE
+    WHEN (CASE WHEN OFR.Trial_Type = 'NT' THEN B.billing_cycle_num + 1 ELSE B.billing_cycle_num END) = 0
+      THEN CASE
+             WHEN OFR.Trial_Type = 'SS'
+               THEN SAFE_MULTIPLY(B.plan_unit_price_amt, SAFE_CAST(B.plan_quantity AS FLOAT64))
+             ELSE SAFE_MULTIPLY(OFR.Trial_Price, SAFE_CAST(B.plan_quantity AS FLOAT64))
+           END
+    ELSE SAFE_MULTIPLY(B.plan_unit_price_amt, SAFE_CAST(B.plan_quantity AS FLOAT64))
+  END                                                             AS Plan_Price_Native_Currency,
+  B.invoice_total_amt                                             AS Order_Total_Native_Currency,
+  COALESCE(B.tax_amt, 0)                                          AS Sales_Tax_Amount_Native_Currency,
+  SAFE_SUBTRACT(B.invoice_total_amt, COALESCE(B.tax_amt, 0))      AS Order_Price_Net_of_Tax_Native_Currency,
+  CASE
+    WHEN (CASE WHEN OFR.Trial_Type = 'NT' THEN B.billing_cycle_num + 1 ELSE B.billing_cycle_num END) = 0
+      THEN CASE
+             WHEN OFR.Trial_Type = 'SS'
+               THEN SAFE_MULTIPLY(B.plan_unit_price_amt, SAFE_CAST(B.plan_quantity AS FLOAT64))
+             ELSE SAFE_MULTIPLY(OFR.Trial_Price, SAFE_CAST(B.plan_quantity AS FLOAT64))
+           END
+    ELSE SAFE_MULTIPLY(B.plan_unit_price_amt, SAFE_CAST(B.plan_quantity AS FLOAT64))
+  END                                                             AS Plan_Price_Net_of_Tax_Native_Currency,
+  SAFE_MULTIPLY(
+    CASE
+      WHEN (CASE WHEN OFR.Trial_Type = 'NT' THEN B.billing_cycle_num + 1 ELSE B.billing_cycle_num END) = 0
+        THEN CASE
+               WHEN OFR.Trial_Type = 'SS'
+                 THEN SAFE_MULTIPLY(B.plan_unit_price_amt, SAFE_CAST(B.plan_quantity AS FLOAT64))
+               ELSE SAFE_MULTIPLY(OFR.Trial_Price, SAFE_CAST(B.plan_quantity AS FLOAT64))
+             END
+      ELSE SAFE_MULTIPLY(B.plan_unit_price_amt, SAFE_CAST(B.plan_quantity AS FLOAT64))
+    END,
+    B.fx_rate)                                                    AS Plan_Price_USD,
+  SAFE_MULTIPLY(B.invoice_total_amt, B.fx_rate)                   AS Order_Total_USD,
+  SAFE_MULTIPLY(COALESCE(B.tax_amt, 0), B.fx_rate)                AS Sales_Tax_Amount_USD,
+  SAFE_MULTIPLY(
+    SAFE_SUBTRACT(B.invoice_total_amt, COALESCE(B.tax_amt, 0)),
+    B.fx_rate)                                                    AS Order_Price_Net_of_Tax_USD,
+  SAFE_MULTIPLY(
+    CASE
+      WHEN (CASE WHEN OFR.Trial_Type = 'NT' THEN B.billing_cycle_num + 1 ELSE B.billing_cycle_num END) = 0
+        THEN CASE
+               WHEN OFR.Trial_Type = 'SS'
+                 THEN SAFE_MULTIPLY(B.plan_unit_price_amt, SAFE_CAST(B.plan_quantity AS FLOAT64))
+               ELSE SAFE_MULTIPLY(OFR.Trial_Price, SAFE_CAST(B.plan_quantity AS FLOAT64))
+             END
+      ELSE SAFE_MULTIPLY(B.plan_unit_price_amt, SAFE_CAST(B.plan_quantity AS FLOAT64))
+    END,
+    B.fx_rate)                                                    AS Plan_Price_Net_of_Tax_USD,
+  SAFE_MULTIPLY(COALESCE(B.refund_amt, 0), B.fx_rate)             AS Refund_Amount_USD
+
+FROM Base B
+LEFT JOIN `variant-finance-data-project.Sticky_Data.Sticky_Dim_AFID` AF
+  ON B.afid_final = AF.AFID
+LEFT JOIN `variant-finance-data-project.chargebee.Chargebee_Dim_Offer` OFR
+  ON CONCAT('PD_', CAST(B.product_id AS STRING)) = CONCAT(OFR.Entity, '_', CAST(OFR.ID AS STRING))
+  AND (OFR.Currency IS NULL OR OFR.Currency = '' OR OFR.Currency = CAST(B.invoice_currency_code AS STRING))
+LEFT JOIN `variant-finance-data-project.chargebee.Chargebee_Dim_Product` PRD
+  ON CONCAT('PD_', CAST(B.product_id AS STRING)) = CONCAT(PRD.Entity, '_', CAST(PRD.Product_Id AS STRING))
+  AND (PRD.Currency IS NULL OR PRD.Currency = '' OR PRD.Currency = CAST(B.invoice_currency_code AS STRING))
+LEFT JOIN `variant-finance-data-project.chargebee.Chargebee_Dim_Gateways` GT
+  ON CONCAT('PD_', CAST(B.card_gateway_account_id AS STRING)) = CONCAT(GT.Entity, '_', CAST(GT.Gateway_ID AS STRING));
